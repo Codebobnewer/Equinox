@@ -2,6 +2,7 @@ package xyz.goga221.equinox.data;
 
 import xyz.goga221.equinox.station.Station;
 import xyz.goga221.equinox.station.StationType;
+import lombok.RequiredArgsConstructor;
 
 import java.sql.Connection;
 import java.sql.PreparedStatement;
@@ -12,15 +13,11 @@ import java.util.List;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
+@RequiredArgsConstructor
 public final class StationDao {
 
     private final DatabaseManager database;
     private final Logger logger;
-
-    public StationDao(DatabaseManager database, Logger logger) {
-        this.database = database;
-        this.logger = logger;
-    }
 
     public List<Station> findAll() {
         List<Station> stations = new ArrayList<>();

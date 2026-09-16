@@ -6,21 +6,16 @@ import xyz.goga221.equinox.station.StationManager;
 import xyz.goga221.equinox.station.StationType;
 import dev.jorel.commandapi.CommandAPICommand;
 import dev.jorel.commandapi.arguments.StringArgument;
+import lombok.RequiredArgsConstructor;
 import org.bukkit.plugin.java.JavaPlugin;
 
+@RequiredArgsConstructor
 public final class StableCommand {
 
     private final JavaPlugin plugin;
     private final StableMenu stableMenu;
     private final HorseManager horseManager;
     private final StationManager stationManager;
-
-    public StableCommand(JavaPlugin plugin, StableMenu stableMenu, HorseManager horseManager, StationManager stationManager) {
-        this.plugin = plugin;
-        this.stableMenu = stableMenu;
-        this.horseManager = horseManager;
-        this.stationManager = stationManager;
-    }
 
     public void register() {
         new CommandAPICommand("stable")

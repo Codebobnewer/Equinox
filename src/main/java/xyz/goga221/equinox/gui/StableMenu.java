@@ -4,6 +4,7 @@ import xyz.goga221.equinox.config.ConfigManager;
 import xyz.goga221.equinox.config.TierDefinition;
 import xyz.goga221.equinox.horse.HorseManager;
 import xyz.goga221.equinox.horse.HorseTier;
+import lombok.RequiredArgsConstructor;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.minimessage.MiniMessage;
 import org.bukkit.Material;
@@ -15,17 +16,13 @@ import xyz.xenondevs.invui.item.impl.SimpleItem;
 import xyz.xenondevs.invui.window.Window;
 import xyz.xenondevs.inventoryaccess.component.AdventureComponentWrapper;
 
+@RequiredArgsConstructor
 public final class StableMenu {
 
     private static final MiniMessage MINI_MESSAGE = MiniMessage.miniMessage();
 
     private final ConfigManager config;
     private final HorseManager horseManager;
-
-    public StableMenu(ConfigManager config, HorseManager horseManager) {
-        this.config = config;
-        this.horseManager = horseManager;
-    }
 
     public void open(Player player) {
         boolean alreadyOwnsHorse = horseManager.hasHorse(player.getUniqueId());

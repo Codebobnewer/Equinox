@@ -2,6 +2,7 @@ package xyz.goga221.equinox.data;
 
 import xyz.goga221.equinox.horse.HorseTier;
 import xyz.goga221.equinox.horse.OwnedHorse;
+import lombok.RequiredArgsConstructor;
 
 import java.sql.Connection;
 import java.sql.PreparedStatement;
@@ -13,15 +14,11 @@ import java.util.UUID;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
+@RequiredArgsConstructor
 public final class HorseDao {
 
     private final DatabaseManager database;
     private final Logger logger;
-
-    public HorseDao(DatabaseManager database, Logger logger) {
-        this.database = database;
-        this.logger = logger;
-    }
 
     /**
      * Only called once, at startup, to seed {@link xyz.goga221.equinox.horse.HorseManager}'s

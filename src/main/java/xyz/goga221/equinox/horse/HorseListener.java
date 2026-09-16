@@ -1,6 +1,7 @@
 package xyz.goga221.equinox.horse;
 
 import xyz.goga221.equinox.util.Messages;
+import lombok.RequiredArgsConstructor;
 import org.bukkit.entity.Entity;
 import org.bukkit.entity.Horse;
 import org.bukkit.entity.Player;
@@ -14,15 +15,11 @@ import org.bukkit.event.entity.EntityDeathEvent;
 import org.bukkit.event.vehicle.VehicleEnterEvent;
 import org.bukkit.event.vehicle.VehicleExitEvent;
 
+@RequiredArgsConstructor
 public final class HorseListener implements Listener {
 
     private final HorseManager horseManager;
     private final Messages messages;
-
-    public HorseListener(HorseManager horseManager, Messages messages) {
-        this.horseManager = horseManager;
-        this.messages = messages;
-    }
 
     // ignoreCancelled: if some other plugin (region protection, etc.) already blocked this mount,
     // we must not still flip the horse's AI on as if it succeeded - that desyncs AI state from

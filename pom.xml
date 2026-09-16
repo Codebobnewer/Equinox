@@ -116,10 +116,18 @@
         </dependency>
 
         <!--
-            Adventure's MiniMessage module is bundled transitively via paper-api, at the exact
-            version Paper 1.21.11 ships. Not re-declared here on purpose, to avoid a version clash
-            with what the running server provides at runtime.
+            Adventure's MiniMessage module. Declared explicitly (as required), pinned to the exact
+            version paper-api 1.21.11 already brings transitively, scope=provided so it's compile
+            time only - the running server supplies the real copy, this just keeps Maven from
+            silently depending on "whatever paper-api happens to pull in" without ever conflicting
+            with it (same version either way).
         -->
+        <dependency>
+            <groupId>net.kyori</groupId>
+            <artifactId>adventure-text-minimessage</artifactId>
+            <version>4.26.1</version>
+            <scope>provided</scope>
+        </dependency>
     </dependencies>
 
     <build>
