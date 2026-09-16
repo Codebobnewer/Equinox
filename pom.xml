@@ -4,7 +4,7 @@
          xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
     <modelVersion>4.0.0</modelVersion>
 
-    <groupId>dev.goga221</groupId>
+    <groupId>xyz.goga221</groupId>
     <artifactId>equinox</artifactId>
     <version>1.0.0-SNAPSHOT</version>
     <packaging>jar</packaging>
@@ -171,7 +171,7 @@
                             <relocations>
                                 <relocation>
                                     <pattern>com.zaxxer.hikari</pattern>
-                                    <shadedPattern>dev.goga221.equinox.libs.hikari</shadedPattern>
+                                    <shadedPattern>xyz.goga221.equinox.libs.hikari</shadedPattern>
                                 </relocation>
                                 <!--
                                     org.sqlite is deliberately NOT relocated: sqlite-jdbc's NativeDB
@@ -182,11 +182,11 @@
                                 -->
                                 <relocation>
                                     <pattern>xyz.xenondevs.invui</pattern>
-                                    <shadedPattern>dev.goga221.equinox.libs.invui</shadedPattern>
+                                    <shadedPattern>xyz.goga221.equinox.libs.invui</shadedPattern>
                                 </relocation>
                                 <relocation>
                                     <pattern>com.github.Anon8281.universalScheduler</pattern>
-                                    <shadedPattern>dev.goga221.equinox.libs.universalscheduler</shadedPattern>
+                                    <shadedPattern>xyz.goga221.equinox.libs.universalscheduler</shadedPattern>
                                 </relocation>
                             </relocations>
                             <filters>

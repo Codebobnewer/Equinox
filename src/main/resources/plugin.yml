@@ -1,6 +1,6 @@
 name: Equinox
 version: ${project.version}
-main: dev.goga221.equinox.Equinox
+main: xyz.goga221.equinox.Equinox
 api-version: '1.21'
 folia-supported: true
 author: goga221
