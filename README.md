@@ -20,8 +20,8 @@ ride them exclusively, and sell them back for a partial refund at WorldGuard-def
 - Java 21
 - Maven
 - A Paper or Folia server on **1.21.11** (pinned there deliberately - see [Version pinning](#version-pinning))
-- [WorldGuard](https://enginehub.org/worldguard) installed on the server (buy/sell stations are
-  WorldGuard regions)
+- [WorldGuard](https://enginehub.org/worldguard) (and WorldEdit, which it depends on) installed on
+  the server - buy/sell stations are WorldGuard regions, defined with WorldEdit's selection tools
 - [CommandAPI](https://commandapi.dev) installed on the server as its own plugin (Equinox depends
   on it rather than bundling its own copy - see [Why CommandAPI isn't shaded](#why-commandapi-isnt-shaded))
 
@@ -46,8 +46,82 @@ CommandAPI and the server API itself are expected to already be present on the s
 | `/stable station remove <name>` | `equinox.admin.station` | Removes a station |
 | `/stable station list` | `equinox.admin.station` | Lists all registered stations |
 
-Buy/sell regions must already exist as WorldGuard regions before running `setbuy`/`setsell` -
-Equinox only reads region bounds, it never creates or edits them.
+> [!IMPORTANT]
+> Equinox never creates or edits WorldGuard regions itself - it only reads the bounds of a region
+> that already exists. You have to define the region with WorldGuard/WorldEdit first, then point
+> Equinox at it by name. See [Setting up buy and sell stations](#setting-up-buy-and-sell-stations)
+> below for the full walkthrough.
+
+## Setting up buy and sell stations
+
+A **buy station** is where a purchased horse spawns; a **sell station** is where a horse has to be
+standing for `/stable sell` to refund it. Both are just WorldGuard regions that Equinox looks up by
+name, so you set them up in two steps: define the region with WorldGuard, then register it with
+Equinox.
+
+### 1. Define the region with WorldGuard
+
+Stand where you want the station and mark out its area, then define the region:
+
+```
+//wand
+```
+```
+/rg define buy_spawn
+```
+
+- `//wand` (WorldEdit) gives you the selection tool - left-click one corner, right-click the other.
+- `/rg define <name>` (WorldGuard) turns that selection into a named region. Region names are
+  case-insensitive and must be unique per world.
+
+> [!TIP]
+> Give the region some height (a few blocks above and below where players will stand). The station
+> lookup checks whether the horse's exact feet position is inside the region's bounding box, so a
+> region that's only one block tall can miss a horse standing on slightly uneven terrain.
+
+Repeat this for as many buy and sell stations as you want - stations don't have to be in the same
+world or anywhere near each other. Equinox always spawns a purchased horse at the **nearest** buy
+station to the buyer, so having one per world (or one per hub) is a common setup.
+
+### 2. Register the region with Equinox
+
+While standing in the **same world** as the region you just defined, run:
+
+```
+/stable station setbuy <station-name> <region-id>
+```
+
+or, for a sell station:
+
+```
+/stable station setsell <station-name> <region-id>
+```
+
+`<station-name>` is whatever you want to call it in Equinox (used later with `remove`/`list`);
+`<region-id>` is the exact WorldGuard region name from step 1. For example:
+
+```
+/stable station setbuy spawn-buy buy_spawn
+/stable station setsell spawn-sell sell_spawn
+```
+
+Both commands need `equinox.admin.station` (default: `op`). If the region name doesn't exist in
+your current world, Equinox tells you and registers nothing.
+
+### 3. Verify it
+
+```
+/stable station list
+```
+
+prints every registered station, its type, world, and backing region ID. From here, `/stable` will
+spawn purchases at the nearest `BUY` station, and `/stable sell` will only succeed while the horse
+is standing inside a `SELL` station's region.
+
+> [!NOTE]
+> You need at least one buy station in a world before anyone can purchase a horse there, and at
+> least one sell station before anyone can sell one back - `/stable` and `/stable sell` fail with a
+> chat message (not an error) if neither exists yet.
 
 ## Configuration
 
