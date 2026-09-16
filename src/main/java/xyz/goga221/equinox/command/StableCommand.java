@@ -2,12 +2,15 @@ package xyz.goga221.equinox.command;
 
 import xyz.goga221.equinox.gui.StableMenu;
 import xyz.goga221.equinox.horse.HorseManager;
+import xyz.goga221.equinox.station.Station;
 import xyz.goga221.equinox.station.StationManager;
 import xyz.goga221.equinox.station.StationType;
 import dev.jorel.commandapi.CommandAPICommand;
 import dev.jorel.commandapi.arguments.StringArgument;
 import lombok.RequiredArgsConstructor;
 import org.bukkit.plugin.java.JavaPlugin;
+
+import java.util.List;
 
 @RequiredArgsConstructor
 public final class StableCommand {
@@ -64,7 +67,7 @@ public final class StableCommand {
                         }))
                 .withSubcommand(new CommandAPICommand("list")
                         .executesPlayer((player, args) -> {
-                            var stations = stationManager.list();
+                            List<Station> stations = stationManager.list();
                             if (stations.isEmpty()) {
                                 player.sendMessage("No stations configured.");
                                 return;

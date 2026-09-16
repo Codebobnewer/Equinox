@@ -2,6 +2,7 @@ package xyz.goga221.equinox.config;
 
 import xyz.goga221.equinox.horse.HorseTier;
 import org.bukkit.configuration.ConfigurationSection;
+import org.bukkit.configuration.file.FileConfiguration;
 import org.bukkit.entity.Horse;
 import org.bukkit.plugin.java.JavaPlugin;
 
@@ -27,7 +28,7 @@ public final class ConfigManager {
 
     public void load() {
         plugin.reloadConfig();
-        var config = plugin.getConfig();
+        FileConfiguration config = plugin.getConfig();
 
         this.databaseFile = config.getString("database.file", "equinox.db");
         this.refundPercent = config.getDouble("economy.refund-percent", 0.8);

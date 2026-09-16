@@ -14,6 +14,7 @@ import org.bukkit.Material;
 import org.bukkit.NamespacedKey;
 import org.bukkit.World;
 import org.bukkit.attribute.Attribute;
+import org.bukkit.attribute.AttributeInstance;
 import org.bukkit.entity.Entity;
 import org.bukkit.entity.EntityType;
 import org.bukkit.entity.Horse;
@@ -113,15 +114,15 @@ public final class HorseManager {
         // but knockback from being attacked still applies since that's physics, not AI.
         horse.setAI(false);
 
-        var health = horse.getAttribute(Attribute.MAX_HEALTH);
+        AttributeInstance health = horse.getAttribute(Attribute.MAX_HEALTH);
         if (health != null) {
             health.setBaseValue(definition.health());
         }
-        var speed = horse.getAttribute(Attribute.MOVEMENT_SPEED);
+        AttributeInstance speed = horse.getAttribute(Attribute.MOVEMENT_SPEED);
         if (speed != null) {
             speed.setBaseValue(definition.speed());
         }
-        var jump = horse.getAttribute(Attribute.JUMP_STRENGTH);
+        AttributeInstance jump = horse.getAttribute(Attribute.JUMP_STRENGTH);
         if (jump != null) {
             jump.setBaseValue(definition.jumpStrength());
         }
