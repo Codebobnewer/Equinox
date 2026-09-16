@@ -33,7 +33,18 @@ public final class Equinox extends JavaPlugin {
         ConfigManager configManager = new ConfigManager(this);
         Messages messages = new Messages(configManager);
 
-        databaseManager = new DatabaseManager(this, configManager.getDatabaseFile());
+        try {
+            databaseManager = new DatabaseManager(this, configManager.getDatabaseFile());
+        } catch (RuntimeException e) {
+            // DatabaseManager already bounds connection attempts to a few seconds instead of
+            // hanging (see its own comment), but if it still fails outright - a corrupted file,
+            // a permissions problem, whatever - fail this plugin cleanly instead of letting the
+            // exception surface as a half-initialized, harder-to-diagnose state.
+            getLogger().severe("Could not initialize the database, disabling Equinox: " + e.getMessage());
+            getServer().getPluginManager().disablePlugin(this);
+            return;
+        }
+
         HorseDao horseDao = new HorseDao(databaseManager, getLogger());
         StationDao stationDao = new StationDao(databaseManager, getLogger());
 

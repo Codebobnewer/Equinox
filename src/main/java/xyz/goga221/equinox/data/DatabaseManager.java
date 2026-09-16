@@ -25,6 +25,17 @@ public final class DatabaseManager {
         // "database is locked" errors instead of trying to parallelize writes.
         hikariConfig.setMaximumPoolSize(1);
         hikariConfig.setPoolName("equinox-sqlite");
+        // This constructor runs synchronously during the server's plugin-enable sequence, on the
+        // thread Paper's watchdog monitors. Without bounded timeouts, a stalled connection (a
+        // locked file left over from an unclean shutdown, a slow/contended disk, etc.) would sit
+        // on HikariCP's 30s default - or SQLite's own indefinite lock wait - and could trip the
+        // watchdog and take the whole server down, not just fail to load this plugin. A local
+        // SQLite file should connect in milliseconds under normal conditions, so these bounds are
+        // generous while still failing fast instead of hanging.
+        hikariConfig.setConnectionTimeout(5_000);
+        hikariConfig.setInitializationFailTimeout(5_000);
+        hikariConfig.setValidationTimeout(3_000);
+        hikariConfig.addDataSourceProperty("busy_timeout", "5000");
 
         this.dataSource = new HikariDataSource(hikariConfig);
         createSchema();
