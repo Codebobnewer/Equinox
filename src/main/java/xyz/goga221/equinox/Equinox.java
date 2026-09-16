@@ -20,6 +20,11 @@ import org.bukkit.plugin.java.JavaPlugin;
 
 import java.util.logging.Level;
 
+/**
+ * Wires up every Equinox component on enable and tears them down on disable. Holds no business
+ * logic itself - that all lives in {@link HorseManager}/{@link StationManager} - this class is
+ * purely construction/lifecycle plumbing.
+ */
 public final class Equinox extends JavaPlugin {
 
     private DatabaseManager databaseManager;

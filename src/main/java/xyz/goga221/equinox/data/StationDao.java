@@ -15,6 +15,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
+/** Plain JDBC CRUD against the {@code stations} table - no ORM, just prepared statements. */
 @RequiredArgsConstructor
 public final class StationDao {
 

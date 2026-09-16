@@ -15,6 +15,7 @@ import org.bukkit.event.entity.EntityDeathEvent;
 import org.bukkit.event.vehicle.VehicleEnterEvent;
 import org.bukkit.event.vehicle.VehicleExitEvent;
 
+/** Translates raw Bukkit events into {@link HorseManager} calls: ride-lock, hit-blocking, panic AI, cleanup on death. */
 @RequiredArgsConstructor
 public final class HorseListener implements Listener {
 

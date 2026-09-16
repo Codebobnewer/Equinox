@@ -12,6 +12,7 @@ import org.bukkit.plugin.java.JavaPlugin;
 
 import java.util.List;
 
+/** Registers the whole {@code /stable} command tree: the player-facing menu/sell, and the admin station subcommands. */
 @RequiredArgsConstructor
 public final class StableCommand {
 

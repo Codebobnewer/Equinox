@@ -11,6 +11,7 @@ import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CopyOnWriteArrayList;
 
+/** Owns the in-memory station cache: admin create/remove, and the buy/sell lookups HorseManager needs. */
 public final class StationManager {
 
     private final StationDao stationDao;

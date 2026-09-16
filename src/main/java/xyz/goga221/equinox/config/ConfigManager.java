@@ -11,6 +11,7 @@ import java.util.EnumMap;
 import java.util.HashMap;
 import java.util.Map;
 
+/** Loads config.yml into typed values, falling back to the shipped defaults for any key an admin hasn't set. */
 public final class ConfigManager {
 
     private final JavaPlugin plugin;

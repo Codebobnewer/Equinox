@@ -9,6 +9,7 @@ import java.sql.Connection;
 import java.sql.SQLException;
 import java.sql.Statement;
 
+/** Owns the single HikariCP-pooled SQLite connection and creates the schema on first run. */
 public final class DatabaseManager {
 
     private final HikariDataSource dataSource;

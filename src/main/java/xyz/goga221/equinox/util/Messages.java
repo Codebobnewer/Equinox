@@ -7,6 +7,7 @@ import net.kyori.adventure.text.minimessage.MiniMessage;
 import net.kyori.adventure.text.minimessage.tag.resolver.TagResolver;
 import org.bukkit.command.CommandSender;
 
+/** Looks up a message template by key via {@link ConfigManager} and renders/sends it as MiniMessage. */
 @RequiredArgsConstructor
 public final class Messages {
 

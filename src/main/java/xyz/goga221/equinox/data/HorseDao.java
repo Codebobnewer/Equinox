@@ -16,6 +16,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
+/** Plain JDBC CRUD against the {@code owned_horses} table - no ORM, just prepared statements. */
 @RequiredArgsConstructor
 public final class HorseDao {
 

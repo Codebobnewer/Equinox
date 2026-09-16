@@ -16,6 +16,7 @@ import xyz.xenondevs.invui.item.impl.SimpleItem;
 import xyz.xenondevs.invui.window.Window;
 import xyz.xenondevs.inventoryaccess.component.AdventureComponentWrapper;
 
+/** Builds and opens the InvUI window shown for {@code /stable} - one item per horse tier. */
 @RequiredArgsConstructor
 public final class StableMenu {
 

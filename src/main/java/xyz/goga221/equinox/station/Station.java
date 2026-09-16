@@ -4,6 +4,7 @@ import org.bukkit.Bukkit;
 import org.bukkit.Location;
 import org.bukkit.World;
 
+/** A registered buy/sell station: the WorldGuard region it's backed by, plus that region's cached center point. */
 public record Station(
         String name,
         StationType type,
