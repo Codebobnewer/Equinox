@@ -75,6 +75,10 @@ public final class HorseManager {
         return ownedHorses.containsKey(playerUuid);
     }
 
+    public int ownedHorseCount() {
+        return ownedHorses.size();
+    }
+
     public void purchase(Player player, HorseTier tier) {
         if (ownedHorses.containsKey(player.getUniqueId())) {
             messages.send(player, "already-own-horse");

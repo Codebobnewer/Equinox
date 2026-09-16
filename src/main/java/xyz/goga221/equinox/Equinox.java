@@ -21,6 +21,7 @@ import org.bukkit.plugin.java.JavaPlugin;
 public final class Equinox extends JavaPlugin {
 
     private DatabaseManager databaseManager;
+    private TaskScheduler scheduler;
 
     // No onLoad() override: CommandAPI v12 ships as a genuine Paper plugin with its own
     // Bootstrapper, which calls CommandAPI.onLoad() itself before any classic Bukkit-style
@@ -51,11 +52,13 @@ public final class Equinox extends JavaPlugin {
         WorldGuardHook worldGuardHook = new WorldGuardHook();
         StationManager stationManager = new StationManager(stationDao, worldGuardHook);
 
-        TaskScheduler scheduler = UniversalScheduler.getScheduler(this);
+        scheduler = UniversalScheduler.getScheduler(this);
         EconomyProvider economyProvider = new StubEconomyProvider(getLogger());
 
         HorseManager horseManager = new HorseManager(this, configManager, horseDao, stationManager,
                 economyProvider, scheduler, messages);
+        getLogger().info("Loaded " + horseManager.ownedHorseCount() + " owned horse(s) and "
+                + stationManager.list().size() + " station(s)");
 
         getServer().getPluginManager().registerEvents(new HorseListener(horseManager, messages), this);
 
@@ -67,6 +70,11 @@ public final class Equinox extends JavaPlugin {
     public void onDisable() {
         if (databaseManager != null) {
             databaseManager.close();
+        }
+        if (scheduler != null) {
+            // Cancels this plugin's own pending scheduled tasks (e.g. a horse's panic-AI timeout)
+            // so none of them fire after the database above is already closed.
+            scheduler.cancelTasks();
         }
         // Deliberately not calling CommandAPI.onDisable() here: CommandAPI runs as its own
         // separate plugin on this server (see plugin.yml's depend: [CommandAPI]), so its
