@@ -24,7 +24,10 @@ public final class HorseListener implements Listener {
         this.messages = messages;
     }
 
-    @EventHandler
+    // ignoreCancelled: if some other plugin (region protection, etc.) already blocked this mount,
+    // we must not still flip the horse's AI on as if it succeeded - that desyncs AI state from
+    // what actually happened, since the player never actually got on.
+    @EventHandler(ignoreCancelled = true)
     public void onVehicleEnter(VehicleEnterEvent event) {
         if (!(event.getVehicle() instanceof Horse horse) || !horseManager.isTaggedHorse(horse)) {
             return;
@@ -40,7 +43,9 @@ public final class HorseListener implements Listener {
         horseManager.onMount(horse);
     }
 
-    @EventHandler
+    // Same reasoning as onVehicleEnter: a cancelled exit means the player is still riding, so
+    // turning AI back off here would break their control of the horse mid-ride.
+    @EventHandler(ignoreCancelled = true)
     public void onVehicleExit(VehicleExitEvent event) {
         if (event.getVehicle() instanceof Horse horse && horseManager.isTaggedHorse(horse)) {
             horseManager.onDismount(horse);
