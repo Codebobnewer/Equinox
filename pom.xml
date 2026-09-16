@@ -1,0 +1,236 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <groupId>dev.goga221</groupId>
+    <artifactId>equinox</artifactId>
+    <version>1.0.0-SNAPSHOT</version>
+    <packaging>jar</packaging>
+
+    <name>Equinox</name>
+    <description>Horse stable plugin: buy/sell mounts at WorldGuard-defined stations, exclusive ownership.</description>
+
+    <properties>
+        <maven.compiler.source>21</maven.compiler.source>
+        <maven.compiler.target>21</maven.compiler.target>
+        <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+        <!--
+            Matches the actual target server (Paper/Folia 1.21.11, verified against its
+            version_history.json). Still pre-"26.1", so Java 21 is fine. Minecraft 26.1+
+            (March 2026) requires Java 25 - do not bump past this line without also raising
+            the Java target and re-checking every dependency below.
+        -->
+        <minecraft.version>1.21.11</minecraft.version>
+    </properties>
+
+    <repositories>
+        <repository>
+            <id>papermc</id>
+            <url>https://repo.papermc.io/repository/maven-public/</url>
+        </repository>
+        <repository>
+            <id>enginehub-maven</id>
+            <url>https://maven.enginehub.org/repo/</url>
+        </repository>
+        <repository>
+            <id>xenondevs</id>
+            <url>https://repo.xenondevs.xyz/releases</url>
+        </repository>
+        <repository>
+            <id>jitpack.io</id>
+            <url>https://jitpack.io</url>
+        </repository>
+    </repositories>
+
+    <dependencies>
+        <!-- Paper/Folia server API (folia-supported plugin.yml flag makes this run on both) -->
+        <dependency>
+            <groupId>io.papermc.paper</groupId>
+            <artifactId>paper-api</artifactId>
+            <version>${minecraft.version}-R0.1-SNAPSHOT</version>
+            <scope>provided</scope>
+        </dependency>
+
+        <!-- WorldGuard: defines buy/sell stations as regions (version matches the installed server plugin) -->
+        <dependency>
+            <groupId>com.sk89q.worldguard</groupId>
+            <artifactId>worldguard-bukkit</artifactId>
+            <version>7.0.16</version>
+            <scope>provided</scope>
+        </dependency>
+
+        <!--
+            Command framework. The target server already runs CommandAPI as its own plugin
+            (CommandAPI-12.0.0-Paper.jar), so we depend on it (provided, not shaded) instead of
+            bundling a second copy - two CommandAPI versions patching the same Brigadier
+            dispatcher in one server is a known source of conflicts. See plugin.yml's
+            depend: [CommandAPI].
+        -->
+        <dependency>
+            <groupId>dev.jorel</groupId>
+            <artifactId>commandapi-bukkit-core</artifactId>
+            <version>12.0.0</version>
+            <scope>provided</scope>
+        </dependency>
+
+        <!--
+            Inventory GUI framework (1.x line - v2 requires Java 25 / latest-MC-only, incompatible
+            with our target). The "invui" artifact itself is a pom-packaged aggregator (no jar) that
+            pulls in invui-core plus every per-version "inventory-access-rN" reflection shim it needs
+            at runtime to detect the running server version - hence type=pom here.
+        -->
+        <dependency>
+            <groupId>xyz.xenondevs.invui</groupId>
+            <artifactId>invui</artifactId>
+            <version>1.49</version>
+            <type>pom</type>
+        </dependency>
+
+        <!-- Folia/Paper/Spigot-agnostic task scheduling -->
+        <dependency>
+            <groupId>com.github.Anon8281</groupId>
+            <artifactId>UniversalScheduler</artifactId>
+            <version>0.1.7</version>
+        </dependency>
+
+        <!-- Boilerplate reduction -->
+        <dependency>
+            <groupId>org.projectlombok</groupId>
+            <artifactId>lombok</artifactId>
+            <version>1.18.34</version>
+            <scope>provided</scope>
+        </dependency>
+
+        <!-- Persistence: connection pooling + SQLite driver -->
+        <dependency>
+            <groupId>com.zaxxer</groupId>
+            <artifactId>HikariCP</artifactId>
+            <version>5.1.0</version>
+        </dependency>
+        <dependency>
+            <groupId>org.xerial</groupId>
+            <artifactId>sqlite-jdbc</artifactId>
+            <version>3.46.1.0</version>
+        </dependency>
+
+        <!--
+            Adventure's MiniMessage module is bundled transitively via paper-api, at the exact
+            version Paper 1.21.11 ships. Not re-declared here on purpose, to avoid a version clash
+            with what the running server provides at runtime.
+        -->
+    </dependencies>
+
+    <build>
+        <finalName>${project.name}-${project.version}</finalName>
+        <resources>
+            <resource>
+                <directory>src/main/resources</directory>
+                <filtering>true</filtering>
+                <includes>
+                    <include>plugin.yml</include>
+                </includes>
+            </resource>
+            <resource>
+                <directory>src/main/resources</directory>
+                <filtering>false</filtering>
+                <excludes>
+                    <exclude>plugin.yml</exclude>
+                </excludes>
+            </resource>
+        </resources>
+        <plugins>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-compiler-plugin</artifactId>
+                <version>3.13.0</version>
+                <configuration>
+                    <release>21</release>
+                    <annotationProcessorPaths>
+                        <path>
+                            <groupId>org.projectlombok</groupId>
+                            <artifactId>lombok</artifactId>
+                            <version>1.18.34</version>
+                        </path>
+                    </annotationProcessorPaths>
+                </configuration>
+            </plugin>
+
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-shade-plugin</artifactId>
+                <version>3.6.0</version>
+                <executions>
+                    <execution>
+                        <phase>package</phase>
+                        <goals>
+                            <goal>shade</goal>
+                        </goals>
+                        <configuration>
+                            <relocations>
+                                <relocation>
+                                    <pattern>com.zaxxer.hikari</pattern>
+                                    <shadedPattern>dev.goga221.equinox.libs.hikari</shadedPattern>
+                                </relocation>
+                                <!--
+                                    org.sqlite is deliberately NOT relocated: sqlite-jdbc's NativeDB
+                                    loads a bundled native library whose JNI symbols are compiled
+                                    against the org.sqlite.* package name. Relocating the Java side
+                                    leaves the native side looking for the old symbol names, which
+                                    throws UnsatisfiedLinkError at first connection.
+                                -->
+                                <relocation>
+                                    <pattern>xyz.xenondevs.invui</pattern>
+                                    <shadedPattern>dev.goga221.equinox.libs.invui</shadedPattern>
+                                </relocation>
+                                <relocation>
+                                    <pattern>com.github.Anon8281.universalScheduler</pattern>
+                                    <shadedPattern>dev.goga221.equinox.libs.universalscheduler</shadedPattern>
+                                </relocation>
+                            </relocations>
+                            <filters>
+                                <filter>
+                                    <artifact>*:*</artifact>
+                                    <excludes>
+                                        <exclude>module-info.class</exclude>
+                                        <exclude>META-INF/*.SF</exclude>
+                                        <exclude>META-INF/*.DSA</exclude>
+                                        <exclude>META-INF/*.RSA</exclude>
+                                    </excludes>
+                                </filter>
+                                <!--
+                                    sqlite-jdbc bundles a native library per OS/arch (~24MB total).
+                                    The target server is Linux x86_64; Windows x86_64 is kept too
+                                    for local dev/testing on this machine. Everything else (Mac,
+                                    FreeBSD, Android, Musl, other architectures) is dead weight that
+                                    only bloats the jar and slows down Paper's plugin remapping on
+                                    every server start, so it's stripped here.
+                                -->
+                                <filter>
+                                    <artifact>org.xerial:sqlite-jdbc</artifact>
+                                    <excludes>
+                                        <exclude>org/sqlite/native/Linux-Android/**</exclude>
+                                        <exclude>org/sqlite/native/Linux-Musl/**</exclude>
+                                        <exclude>org/sqlite/native/FreeBSD/**</exclude>
+                                        <exclude>org/sqlite/native/Mac/**</exclude>
+                                        <exclude>org/sqlite/native/Windows/x86/**</exclude>
+                                        <exclude>org/sqlite/native/Windows/armv7/**</exclude>
+                                        <exclude>org/sqlite/native/Windows/aarch64/**</exclude>
+                                        <exclude>org/sqlite/native/Linux/arm/**</exclude>
+                                        <exclude>org/sqlite/native/Linux/x86/**</exclude>
+                                        <exclude>org/sqlite/native/Linux/armv6/**</exclude>
+                                        <exclude>org/sqlite/native/Linux/armv7/**</exclude>
+                                        <exclude>org/sqlite/native/Linux/riscv64/**</exclude>
+                                        <exclude>org/sqlite/native/Linux/aarch64/**</exclude>
+                                        <exclude>org/sqlite/native/Linux/ppc64/**</exclude>
+                                    </excludes>
+                                </filter>
+                            </filters>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+        </plugins>
+    </build>
+</project>

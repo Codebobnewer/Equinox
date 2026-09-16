@@ -1,0 +1,19 @@
+name: Equinox
+version: ${project.version}
+main: dev.goga221.equinox.Equinox
+api-version: '1.21'
+folia-supported: true
+author: goga221
+description: Horse stable plugin - buy/sell mounts at WorldGuard-defined stations.
+
+depend: [WorldGuard, CommandAPI]
+
+# Commands are registered at runtime through CommandAPI, not declared here.
+
+permissions:
+  equinox.use:
+    description: Allows using /stable to browse and buy/sell horses.
+    default: true
+  equinox.admin.station:
+    description: Allows managing buy/sell stations.
+    default: op

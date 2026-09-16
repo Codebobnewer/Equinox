@@ -1,0 +1,55 @@
+# Equinox configuration
+
+database:
+  file: equinox.db
+
+economy:
+  # Fraction of the original purchase price refunded when a horse is sold back.
+  refund-percent: 0.8
+
+horse:
+  # An unridden horse normally stands still (AI off) so it doesn't wander off. Getting hit
+  # re-enables AI for this many ticks (20 ticks = 1 second) so it can panic/flee, then it goes
+  # back to standing still - unless it gets hit again first, which restarts this timer.
+  panic-duration-ticks: 100
+
+# Horse tiers offered in the /stable menu. Stats are applied to the spawned horse's
+# GENERIC_MAX_HEALTH and GENERIC_MOVEMENT_SPEED attributes and jump strength.
+# color/style match org.bukkit.entity.Horse.Color / Horse.Style enum names.
+tiers:
+  BASIC:
+    display-name: "<white>Basic Horse"
+    price: 100.0
+    health: 20.0
+    speed: 0.2
+    jump-strength: 0.5
+    color: BROWN
+    style: NONE
+  ADVANCED:
+    display-name: "<yellow>Advanced Horse"
+    price: 300.0
+    health: 30.0
+    speed: 0.28
+    jump-strength: 0.6
+    color: BLACK
+    style: WHITE_DOTS
+  ELITE:
+    display-name: "<gold>Elite Horse"
+    price: 750.0
+    health: 40.0
+    speed: 0.36
+    jump-strength: 0.7
+    color: WHITE
+    style: BLACK_DOTS
+
+messages:
+  already-own-horse: "<red>You already own a horse. Sell it before buying another."
+  no-buy-station: "<red>There is no buy station in this world yet. Ask an admin to set one up."
+  not-enough-money: "<red>You can't afford this horse."
+  purchase-success: "<green>You bought a <white><tier></white> for <white><price></white>!"
+  no-owned-horse: "<red>You don't own a horse."
+  horse-not-found: "<red>Your horse couldn't be located. Make sure it's loaded (nearby chunks loaded).</red>"
+  not-at-sell-station: "<red>Bring your horse to a sell station first."
+  sell-success: "<green>You sold your horse back for <white><refund></white>."
+  not-owner: "<red>This horse isn't yours."
+  cant-hit-horse: "<red>You can't attack someone else's horse."
