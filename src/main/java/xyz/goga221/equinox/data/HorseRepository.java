@@ -18,13 +18,13 @@ import java.util.logging.Logger;
 
 /** Plain JDBC CRUD against the {@code owned_horses} table - no ORM, just prepared statements. */
 @RequiredArgsConstructor
-public final class HorseDao {
+public final class HorseRepository {
 
     private final DatabaseManager database;
     private final Logger logger;
 
     /**
-     * Only called once, at startup, to seed {@link xyz.goga221.equinox.horse.HorseManager}'s
+     * Only called once, at startup, to seed {@link xyz.goga221.equinox.horse.HorseService}'s
      * in-memory ownership cache off the main thread - everything else reads that cache instead of
      * hitting the database, so purchase/sell/menu-open never block the calling thread on disk I/O.
      */

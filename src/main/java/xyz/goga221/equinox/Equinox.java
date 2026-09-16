@@ -3,14 +3,14 @@ package xyz.goga221.equinox;
 import xyz.goga221.equinox.command.StableCommand;
 import xyz.goga221.equinox.config.ConfigManager;
 import xyz.goga221.equinox.data.DatabaseManager;
-import xyz.goga221.equinox.data.HorseDao;
-import xyz.goga221.equinox.data.StationDao;
+import xyz.goga221.equinox.data.HorseRepository;
+import xyz.goga221.equinox.data.StationRepository;
 import xyz.goga221.equinox.economy.EconomyProvider;
 import xyz.goga221.equinox.economy.StubEconomyProvider;
 import xyz.goga221.equinox.gui.StableMenu;
 import xyz.goga221.equinox.horse.HorseListener;
-import xyz.goga221.equinox.horse.HorseManager;
-import xyz.goga221.equinox.station.StationManager;
+import xyz.goga221.equinox.horse.HorseService;
+import xyz.goga221.equinox.station.StationService;
 import xyz.goga221.equinox.station.WorldGuardHook;
 import xyz.goga221.equinox.util.Messages;
 import com.github.Anon8281.universalScheduler.UniversalScheduler;
@@ -22,7 +22,7 @@ import java.util.logging.Level;
 
 /**
  * Wires up every Equinox component on enable and tears them down on disable. Holds no business
- * logic itself - that all lives in {@link HorseManager}/{@link StationManager} - this class is
+ * logic itself - that all lives in {@link HorseService}/{@link StationService} - this class is
  * purely construction/lifecycle plumbing.
  */
 public final class Equinox extends JavaPlugin {
@@ -53,29 +53,29 @@ public final class Equinox extends JavaPlugin {
             return;
         }
 
-        HorseDao horseDao = new HorseDao(databaseManager, getLogger());
-        StationDao stationDao = new StationDao(databaseManager, getLogger());
+        HorseRepository horseRepository = new HorseRepository(databaseManager, getLogger());
+        StationRepository stationRepository = new StationRepository(databaseManager, getLogger());
 
         WorldGuardHook worldGuardHook = new WorldGuardHook();
-        StationManager stationManager = new StationManager(stationDao, worldGuardHook);
+        StationService stationService = new StationService(stationRepository, worldGuardHook);
 
         scheduler = UniversalScheduler.getScheduler(this);
         EconomyProvider economyProvider = new StubEconomyProvider(getLogger());
 
-        HorseManager horseManager = new HorseManager(this, configManager, horseDao, stationManager,
+        HorseService horseService = new HorseService(this, configManager, horseRepository, stationService,
                 economyProvider, scheduler, messages);
 
         // Loaded off the main thread so a stalled database can't block server startup at all -
         // both loads are independent (no station-depends-on-horse ordering needed), so they just
         // run side by side and each logs once it's actually done.
-        stationManager.loadStationsIntoCache(scheduler).whenComplete((count, throwable) -> {
+        stationService.loadStationsIntoCache(scheduler).whenComplete((count, throwable) -> {
             if (throwable != null) {
                 getLogger().log(Level.SEVERE, "Failed to load stations", throwable);
             } else {
                 getLogger().info("Loaded " + count + " station(s)");
             }
         });
-        horseManager.loadOwnedHorsesIntoCache().whenComplete((count, throwable) -> {
+        horseService.loadOwnedHorsesIntoCache().whenComplete((count, throwable) -> {
             if (throwable != null) {
                 getLogger().log(Level.SEVERE, "Failed to load owned horses", throwable);
             } else {
@@ -83,10 +83,10 @@ public final class Equinox extends JavaPlugin {
             }
         });
 
-        getServer().getPluginManager().registerEvents(new HorseListener(horseManager, messages), this);
+        getServer().getPluginManager().registerEvents(new HorseListener(horseService, messages), this);
 
-        StableMenu stableMenu = new StableMenu(configManager, horseManager);
-        new StableCommand(this, stableMenu, horseManager, stationManager).register();
+        StableMenu stableMenu = new StableMenu(configManager, horseService);
+        new StableCommand(this, stableMenu, horseService, stationService, messages).register();
     }
 
     @Override

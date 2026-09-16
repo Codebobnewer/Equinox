@@ -17,12 +17,12 @@ import java.util.logging.Logger;
 
 /** Plain JDBC CRUD against the {@code stations} table - no ORM, just prepared statements. */
 @RequiredArgsConstructor
-public final class StationDao {
+public final class StationRepository {
 
     private final DatabaseManager database;
     private final Logger logger;
 
-    /** Only called once, at startup, to seed {@link xyz.goga221.equinox.station.StationManager}'s cache off the main thread. */
+    /** Only called once, at startup, to seed {@link xyz.goga221.equinox.station.StationService}'s cache off the main thread. */
     public CompletableFuture<List<Station>> findAllAsync(TaskScheduler scheduler) {
         CompletableFuture<List<Station>> future = new CompletableFuture<>();
         scheduler.runTaskAsynchronously(() -> {

@@ -1,13 +1,16 @@
 package xyz.goga221.equinox.command;
 
 import xyz.goga221.equinox.gui.StableMenu;
-import xyz.goga221.equinox.horse.HorseManager;
+import xyz.goga221.equinox.horse.HorseService;
 import xyz.goga221.equinox.station.Station;
-import xyz.goga221.equinox.station.StationManager;
+import xyz.goga221.equinox.station.StationService;
 import xyz.goga221.equinox.station.StationType;
+import xyz.goga221.equinox.util.Messages;
 import dev.jorel.commandapi.CommandAPICommand;
 import dev.jorel.commandapi.arguments.StringArgument;
 import lombok.RequiredArgsConstructor;
+import net.kyori.adventure.text.minimessage.tag.resolver.Placeholder;
+import org.bukkit.entity.Player;
 import org.bukkit.plugin.java.JavaPlugin;
 
 import java.util.List;
@@ -18,8 +21,9 @@ public final class StableCommand {
 
     private final JavaPlugin plugin;
     private final StableMenu stableMenu;
-    private final HorseManager horseManager;
-    private final StationManager stationManager;
+    private final HorseService horseService;
+    private final StationService stationService;
+    private final Messages messages;
 
     public void register() {
         new CommandAPICommand("stable")
@@ -30,7 +34,7 @@ public final class StableCommand {
                 .withSubcommand(new CommandAPICommand("sell")
                         .withPermission("equinox.use")
                         .executesPlayer((player, args) -> {
-                            horseManager.sell(player);
+                            horseService.sell(player);
                         }))
                 .withSubcommand(stationSubcommand())
                 .register(plugin);
@@ -44,38 +48,48 @@ public final class StableCommand {
                         .executesPlayer((player, args) -> {
                             String name = (String) args.get("name");
                             String region = (String) args.get("region");
-                            boolean created = stationManager.createStation(name, StationType.BUY, player.getWorld(), region);
-                            player.sendMessage(created
-                                    ? "Buy station '" + name + "' set to region '" + region + "'."
-                                    : "No region named '" + region + "' found in " + player.getWorld().getName() + ".");
+                            registerStation(player, name, region, StationType.BUY);
                         }))
                 .withSubcommand(new CommandAPICommand("setsell")
                         .withArguments(new StringArgument("name"), new StringArgument("region"))
                         .executesPlayer((player, args) -> {
                             String name = (String) args.get("name");
                             String region = (String) args.get("region");
-                            boolean created = stationManager.createStation(name, StationType.SELL, player.getWorld(), region);
-                            player.sendMessage(created
-                                    ? "Sell station '" + name + "' set to region '" + region + "'."
-                                    : "No region named '" + region + "' found in " + player.getWorld().getName() + ".");
+                            registerStation(player, name, region, StationType.SELL);
                         }))
                 .withSubcommand(new CommandAPICommand("remove")
                         .withArguments(new StringArgument("name"))
                         .executesPlayer((player, args) -> {
                             String name = (String) args.get("name");
-                            boolean removed = stationManager.removeStation(name);
-                            player.sendMessage(removed ? "Removed station '" + name + "'." : "No station named '" + name + "'.");
+                            boolean removed = stationService.removeStation(name);
+                            messages.send(player, removed ? "station-removed" : "station-not-found", Placeholder.unparsed("name", name));
                         }))
                 .withSubcommand(new CommandAPICommand("list")
                         .executesPlayer((player, args) -> {
-                            List<Station> stations = stationManager.list();
+                            List<Station> stations = stationService.list();
                             if (stations.isEmpty()) {
-                                player.sendMessage("No stations configured.");
+                                messages.send(player, "station-list-empty");
                                 return;
                             }
-                            stations.forEach(station -> player.sendMessage(
-                                    "- " + station.name() + " [" + station.type() + "] world=" + station.world()
-                                            + " region=" + station.regionId()));
+                            stations.forEach(station -> messages.send(player, "station-list-entry",
+                                    Placeholder.unparsed("name", station.name()),
+                                    Placeholder.unparsed("type", station.type().name()),
+                                    Placeholder.unparsed("world", station.world()),
+                                    Placeholder.unparsed("region", station.regionId())));
                         }));
+    }
+
+    private void registerStation(Player player, String name, String region, StationType type) {
+        boolean created = stationService.createStation(name, type, player.getWorld(), region);
+        if (created) {
+            messages.send(player, "station-set-success",
+                    Placeholder.unparsed("type", type == StationType.BUY ? "Buy" : "Sell"),
+                    Placeholder.unparsed("name", name),
+                    Placeholder.unparsed("region", region));
+        } else {
+            messages.send(player, "station-set-failed",
+                    Placeholder.unparsed("region", region),
+                    Placeholder.unparsed("world", player.getWorld().getName()));
+        }
     }
 }

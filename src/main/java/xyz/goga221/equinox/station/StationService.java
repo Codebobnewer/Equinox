@@ -1,6 +1,6 @@
 package xyz.goga221.equinox.station;
 
-import xyz.goga221.equinox.data.StationDao;
+import xyz.goga221.equinox.data.StationRepository;
 import com.github.Anon8281.universalScheduler.scheduling.schedulers.TaskScheduler;
 import org.bukkit.Location;
 import org.bukkit.World;
@@ -11,21 +11,21 @@ import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CopyOnWriteArrayList;
 
-/** Owns the in-memory station cache: admin create/remove, and the buy/sell lookups HorseManager needs. */
-public final class StationManager {
+/** Owns the in-memory station cache: admin create/remove, and the buy/sell lookups HorseService needs. */
+public final class StationService {
 
-    private final StationDao stationDao;
+    private final StationRepository stationRepository;
     private final WorldGuardHook worldGuardHook;
     private final List<Station> stations = new CopyOnWriteArrayList<>();
 
-    public StationManager(StationDao stationDao, WorldGuardHook worldGuardHook) {
-        this.stationDao = stationDao;
+    public StationService(StationRepository stationRepository, WorldGuardHook worldGuardHook) {
+        this.stationRepository = stationRepository;
         this.worldGuardHook = worldGuardHook;
     }
 
     /** Loads every station into the cache off the main thread, returning how many were loaded. */
     public CompletableFuture<Integer> loadStationsIntoCache(TaskScheduler scheduler) {
-        return stationDao.findAllAsync(scheduler).thenApply(loaded -> {
+        return stationRepository.findAllAsync(scheduler).thenApply(loaded -> {
             stations.clear();
             stations.addAll(loaded);
             return stations.size();
@@ -47,14 +47,14 @@ public final class StationManager {
         Station station = new Station(name, type, world.getName(), regionId, location.getX(), location.getY(), location.getZ());
         stations.removeIf(existing -> existing.name().equalsIgnoreCase(name));
         stations.add(station);
-        stationDao.insert(station);
+        stationRepository.insert(station);
         return true;
     }
 
     public boolean removeStation(String name) {
         boolean removed = stations.removeIf(existing -> existing.name().equalsIgnoreCase(name));
         if (removed) {
-            stationDao.delete(name);
+            stationRepository.delete(name);
         }
         return removed;
     }

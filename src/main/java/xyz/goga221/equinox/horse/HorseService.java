@@ -2,10 +2,10 @@ package xyz.goga221.equinox.horse;
 
 import xyz.goga221.equinox.config.ConfigManager;
 import xyz.goga221.equinox.config.TierDefinition;
-import xyz.goga221.equinox.data.HorseDao;
+import xyz.goga221.equinox.data.HorseRepository;
 import xyz.goga221.equinox.economy.EconomyProvider;
 import xyz.goga221.equinox.station.Station;
-import xyz.goga221.equinox.station.StationManager;
+import xyz.goga221.equinox.station.StationService;
 import xyz.goga221.equinox.util.Messages;
 import com.github.Anon8281.universalScheduler.scheduling.schedulers.TaskScheduler;
 import net.kyori.adventure.text.minimessage.tag.resolver.Placeholder;
@@ -34,12 +34,12 @@ import java.util.concurrent.ConcurrentHashMap;
  * {@link EconomyProvider}, spawning/removing the actual {@link Horse} entity, and tagging
  * it so {@link HorseListener} can enforce exclusive riding and clean up on death.
  */
-public final class HorseManager {
+public final class HorseService {
 
     private final Plugin plugin;
     private final ConfigManager config;
-    private final HorseDao horseDao;
-    private final StationManager stationManager;
+    private final HorseRepository horseRepository;
+    private final StationService stationService;
     private final EconomyProvider economy;
     private final TaskScheduler scheduler;
     private final Messages messages;
@@ -56,12 +56,12 @@ public final class HorseManager {
     // Seeded once from the database at startup; every purchase/sell/death keeps it in sync.
     private final Map<UUID, OwnedHorse> ownedHorses = new ConcurrentHashMap<>();
 
-    public HorseManager(Plugin plugin, ConfigManager config, HorseDao horseDao, StationManager stationManager,
+    public HorseService(Plugin plugin, ConfigManager config, HorseRepository horseRepository, StationService stationService,
                          EconomyProvider economy, TaskScheduler scheduler, Messages messages) {
         this.plugin = plugin;
         this.config = config;
-        this.horseDao = horseDao;
-        this.stationManager = stationManager;
+        this.horseRepository = horseRepository;
+        this.stationService = stationService;
         this.economy = economy;
         this.scheduler = scheduler;
         this.messages = messages;
@@ -71,7 +71,7 @@ public final class HorseManager {
 
     /** Loads every owned horse into the cache off the main thread, returning how many were loaded. */
     public CompletableFuture<Integer> loadOwnedHorsesIntoCache() {
-        return horseDao.findAllAsync(scheduler).thenApply(loaded -> {
+        return horseRepository.findAllAsync(scheduler).thenApply(loaded -> {
             ownedHorses.clear();
             for (OwnedHorse owned : loaded) {
                 ownedHorses.put(owned.ownerUuid(), owned);
@@ -95,7 +95,7 @@ public final class HorseManager {
             return;
         }
 
-        Optional<Station> station = stationManager.findNearestBuyStation(player.getLocation());
+        Optional<Station> station = stationService.findNearestBuyStation(player.getLocation());
         if (station.isEmpty()) {
             messages.send(player, "no-buy-station");
             return;
@@ -152,7 +152,7 @@ public final class HorseManager {
                 System.currentTimeMillis()
         );
         ownedHorses.put(player.getUniqueId(), owned);
-        scheduler.runTaskAsynchronously(() -> horseDao.insert(owned));
+        scheduler.runTaskAsynchronously(() -> horseRepository.insert(owned));
 
         messages.send(player, "purchase-success",
                 Placeholder.parsed("tier", definition.displayName()),
@@ -182,7 +182,7 @@ public final class HorseManager {
         }
 
         Location currentLocation = horse.getLocation();
-        if (stationManager.findSellStationContaining(currentLocation).isEmpty()) {
+        if (stationService.findSellStationContaining(currentLocation).isEmpty()) {
             messages.send(player, "not-at-sell-station");
             return;
         }
@@ -191,7 +191,7 @@ public final class HorseManager {
         horse.remove();
         economy.deposit(player, refund);
         ownedHorses.remove(owned.ownerUuid());
-        scheduler.runTaskAsynchronously(() -> horseDao.delete(owned.horseUuid()));
+        scheduler.runTaskAsynchronously(() -> horseRepository.delete(owned.horseUuid()));
 
         messages.send(player, "sell-success", Placeholder.unparsed("refund", String.valueOf(refund)));
     }
@@ -265,6 +265,6 @@ public final class HorseManager {
         if (ownerUuid != null) {
             ownedHorses.remove(UUID.fromString(ownerUuid));
         }
-        scheduler.runTaskAsynchronously(() -> horseDao.delete(horse.getUniqueId()));
+        scheduler.runTaskAsynchronously(() -> horseRepository.delete(horse.getUniqueId()));
     }
 }

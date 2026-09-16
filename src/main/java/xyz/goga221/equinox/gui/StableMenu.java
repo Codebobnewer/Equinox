@@ -2,7 +2,7 @@ package xyz.goga221.equinox.gui;
 
 import xyz.goga221.equinox.config.ConfigManager;
 import xyz.goga221.equinox.config.TierDefinition;
-import xyz.goga221.equinox.horse.HorseManager;
+import xyz.goga221.equinox.horse.HorseService;
 import xyz.goga221.equinox.horse.HorseTier;
 import lombok.RequiredArgsConstructor;
 import net.kyori.adventure.text.Component;
@@ -23,10 +23,10 @@ public final class StableMenu {
     private static final MiniMessage MINI_MESSAGE = MiniMessage.miniMessage();
 
     private final ConfigManager config;
-    private final HorseManager horseManager;
+    private final HorseService horseService;
 
     public void open(Player player) {
-        boolean alreadyOwnsHorse = horseManager.hasHorse(player.getUniqueId());
+        boolean alreadyOwnsHorse = horseService.hasHorse(player.getUniqueId());
 
         Structure structure = new Structure(
                 "#########",
@@ -67,6 +67,6 @@ public final class StableMenu {
                                 : Component.empty())
                 );
 
-        return new SimpleItem(builder, click -> horseManager.purchase(player, tier));
+        return new SimpleItem(builder, click -> horseService.purchase(player, tier));
     }
 }
