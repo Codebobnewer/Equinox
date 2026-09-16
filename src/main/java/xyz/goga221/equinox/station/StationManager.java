@@ -1,12 +1,14 @@
 package xyz.goga221.equinox.station;
 
 import xyz.goga221.equinox.data.StationDao;
+import com.github.Anon8281.universalScheduler.scheduling.schedulers.TaskScheduler;
 import org.bukkit.Location;
 import org.bukkit.World;
 
 import java.util.Comparator;
 import java.util.List;
 import java.util.Optional;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CopyOnWriteArrayList;
 
 public final class StationManager {
@@ -18,7 +20,15 @@ public final class StationManager {
     public StationManager(StationDao stationDao, WorldGuardHook worldGuardHook) {
         this.stationDao = stationDao;
         this.worldGuardHook = worldGuardHook;
-        this.stations.addAll(stationDao.findAll());
+    }
+
+    /** Loads every station into the cache off the main thread, returning how many were loaded. */
+    public CompletableFuture<Integer> loadStationsIntoCache(TaskScheduler scheduler) {
+        return stationDao.findAllAsync(scheduler).thenApply(loaded -> {
+            stations.clear();
+            stations.addAll(loaded);
+            return stations.size();
+        });
     }
 
     /**

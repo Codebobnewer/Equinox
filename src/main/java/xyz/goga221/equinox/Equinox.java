@@ -18,6 +18,8 @@ import com.github.Anon8281.universalScheduler.scheduling.schedulers.TaskSchedule
 import dev.jorel.commandapi.CommandAPI;
 import org.bukkit.plugin.java.JavaPlugin;
 
+import java.util.logging.Level;
+
 public final class Equinox extends JavaPlugin {
 
     private DatabaseManager databaseManager;
@@ -57,8 +59,24 @@ public final class Equinox extends JavaPlugin {
 
         HorseManager horseManager = new HorseManager(this, configManager, horseDao, stationManager,
                 economyProvider, scheduler, messages);
-        getLogger().info("Loaded " + horseManager.ownedHorseCount() + " owned horse(s) and "
-                + stationManager.list().size() + " station(s)");
+
+        // Loaded off the main thread so a stalled database can't block server startup at all -
+        // both loads are independent (no station-depends-on-horse ordering needed), so they just
+        // run side by side and each logs once it's actually done.
+        stationManager.loadStationsIntoCache(scheduler).whenComplete((count, throwable) -> {
+            if (throwable != null) {
+                getLogger().log(Level.SEVERE, "Failed to load stations", throwable);
+            } else {
+                getLogger().info("Loaded " + count + " station(s)");
+            }
+        });
+        horseManager.loadOwnedHorsesIntoCache().whenComplete((count, throwable) -> {
+            if (throwable != null) {
+                getLogger().log(Level.SEVERE, "Failed to load owned horses", throwable);
+            } else {
+                getLogger().info("Loaded " + count + " owned horse(s)");
+            }
+        });
 
         getServer().getPluginManager().registerEvents(new HorseListener(horseManager, messages), this);
 

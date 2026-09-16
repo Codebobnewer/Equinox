@@ -26,6 +26,7 @@ import org.bukkit.plugin.Plugin;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
@@ -66,17 +67,21 @@ public final class HorseManager {
         this.messages = messages;
         this.ownerKey = new NamespacedKey(plugin, "owner");
         this.tierKey = new NamespacedKey(plugin, "tier");
-        for (OwnedHorse owned : horseDao.findAll()) {
-            ownedHorses.put(owned.ownerUuid(), owned);
-        }
+    }
+
+    /** Loads every owned horse into the cache off the main thread, returning how many were loaded. */
+    public CompletableFuture<Integer> loadOwnedHorsesIntoCache() {
+        return horseDao.findAllAsync(scheduler).thenApply(loaded -> {
+            ownedHorses.clear();
+            for (OwnedHorse owned : loaded) {
+                ownedHorses.put(owned.ownerUuid(), owned);
+            }
+            return ownedHorses.size();
+        });
     }
 
     public boolean hasHorse(UUID playerUuid) {
         return ownedHorses.containsKey(playerUuid);
-    }
-
-    public int ownedHorseCount() {
-        return ownedHorses.size();
     }
 
     public void purchase(Player player, HorseTier tier) {

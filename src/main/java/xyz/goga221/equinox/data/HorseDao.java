@@ -2,6 +2,7 @@ package xyz.goga221.equinox.data;
 
 import xyz.goga221.equinox.horse.HorseTier;
 import xyz.goga221.equinox.horse.OwnedHorse;
+import com.github.Anon8281.universalScheduler.scheduling.schedulers.TaskScheduler;
 import lombok.RequiredArgsConstructor;
 
 import java.sql.Connection;
@@ -11,6 +12,7 @@ import java.sql.SQLException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
@@ -22,10 +24,22 @@ public final class HorseDao {
 
     /**
      * Only called once, at startup, to seed {@link xyz.goga221.equinox.horse.HorseManager}'s
-     * in-memory ownership cache - everything else reads that cache instead of hitting the
-     * database, so purchase/sell/menu-open never block the calling thread on disk I/O.
+     * in-memory ownership cache off the main thread - everything else reads that cache instead of
+     * hitting the database, so purchase/sell/menu-open never block the calling thread on disk I/O.
      */
-    public List<OwnedHorse> findAll() {
+    public CompletableFuture<List<OwnedHorse>> findAllAsync(TaskScheduler scheduler) {
+        CompletableFuture<List<OwnedHorse>> future = new CompletableFuture<>();
+        scheduler.runTaskAsynchronously(() -> {
+            try {
+                future.complete(loadAll());
+            } catch (SQLException e) {
+                future.completeExceptionally(e);
+            }
+        });
+        return future;
+    }
+
+    private List<OwnedHorse> loadAll() throws SQLException {
         List<OwnedHorse> horses = new ArrayList<>();
         String sql = "SELECT * FROM owned_horses";
         try (Connection connection = database.getConnection();
@@ -34,8 +48,6 @@ public final class HorseDao {
             while (resultSet.next()) {
                 horses.add(map(resultSet));
             }
-        } catch (SQLException e) {
-            logger.log(Level.SEVERE, "Failed to load owned horses", e);
         }
         return horses;
     }

@@ -2,6 +2,7 @@ package xyz.goga221.equinox.data;
 
 import xyz.goga221.equinox.station.Station;
 import xyz.goga221.equinox.station.StationType;
+import com.github.Anon8281.universalScheduler.scheduling.schedulers.TaskScheduler;
 import lombok.RequiredArgsConstructor;
 
 import java.sql.Connection;
@@ -10,6 +11,7 @@ import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.CompletableFuture;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
@@ -19,7 +21,20 @@ public final class StationDao {
     private final DatabaseManager database;
     private final Logger logger;
 
-    public List<Station> findAll() {
+    /** Only called once, at startup, to seed {@link xyz.goga221.equinox.station.StationManager}'s cache off the main thread. */
+    public CompletableFuture<List<Station>> findAllAsync(TaskScheduler scheduler) {
+        CompletableFuture<List<Station>> future = new CompletableFuture<>();
+        scheduler.runTaskAsynchronously(() -> {
+            try {
+                future.complete(loadAll());
+            } catch (SQLException e) {
+                future.completeExceptionally(e);
+            }
+        });
+        return future;
+    }
+
+    private List<Station> loadAll() throws SQLException {
         List<Station> stations = new ArrayList<>();
         String sql = "SELECT * FROM stations";
         try (Connection connection = database.getConnection();
@@ -28,8 +43,6 @@ public final class StationDao {
             while (resultSet.next()) {
                 stations.add(map(resultSet));
             }
-        } catch (SQLException e) {
-            logger.log(Level.SEVERE, "Failed to load stations", e);
         }
         return stations;
     }
