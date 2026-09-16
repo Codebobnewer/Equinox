@@ -10,10 +10,11 @@ import xyz.goga221.equinox.economy.StubEconomyProvider;
 import xyz.goga221.equinox.gui.StableMenu;
 import xyz.goga221.equinox.horse.HorseListener;
 import xyz.goga221.equinox.horse.HorseManager;
-import xyz.goga221.equinox.scheduler.SchedulerService;
 import xyz.goga221.equinox.station.StationManager;
 import xyz.goga221.equinox.station.WorldGuardHook;
 import xyz.goga221.equinox.util.Messages;
+import com.github.Anon8281.universalScheduler.UniversalScheduler;
+import com.github.Anon8281.universalScheduler.scheduling.schedulers.TaskScheduler;
 import dev.jorel.commandapi.CommandAPI;
 import org.bukkit.plugin.java.JavaPlugin;
 
@@ -39,11 +40,11 @@ public final class Equinox extends JavaPlugin {
         WorldGuardHook worldGuardHook = new WorldGuardHook();
         StationManager stationManager = new StationManager(stationDao, worldGuardHook);
 
-        SchedulerService schedulerService = new SchedulerService(this);
+        TaskScheduler scheduler = UniversalScheduler.getScheduler(this);
         EconomyProvider economyProvider = new StubEconomyProvider(getLogger());
 
         HorseManager horseManager = new HorseManager(this, configManager, horseDao, stationManager,
-                economyProvider, schedulerService, messages);
+                economyProvider, scheduler, messages);
 
         getServer().getPluginManager().registerEvents(new HorseListener(horseManager, messages), this);
 

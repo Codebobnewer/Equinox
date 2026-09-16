@@ -4,10 +4,10 @@ import xyz.goga221.equinox.config.ConfigManager;
 import xyz.goga221.equinox.config.TierDefinition;
 import xyz.goga221.equinox.data.HorseDao;
 import xyz.goga221.equinox.economy.EconomyProvider;
-import xyz.goga221.equinox.scheduler.SchedulerService;
 import xyz.goga221.equinox.station.Station;
 import xyz.goga221.equinox.station.StationManager;
 import xyz.goga221.equinox.util.Messages;
+import com.github.Anon8281.universalScheduler.scheduling.schedulers.TaskScheduler;
 import net.kyori.adventure.text.minimessage.tag.resolver.Placeholder;
 import org.bukkit.Location;
 import org.bukkit.Material;
@@ -40,7 +40,7 @@ public final class HorseManager {
     private final HorseDao horseDao;
     private final StationManager stationManager;
     private final EconomyProvider economy;
-    private final SchedulerService scheduler;
+    private final TaskScheduler scheduler;
     private final Messages messages;
 
     private final NamespacedKey ownerKey;
@@ -56,7 +56,7 @@ public final class HorseManager {
     private final Map<UUID, OwnedHorse> ownedHorses = new ConcurrentHashMap<>();
 
     public HorseManager(Plugin plugin, ConfigManager config, HorseDao horseDao, StationManager stationManager,
-                         EconomyProvider economy, SchedulerService scheduler, Messages messages) {
+                         EconomyProvider economy, TaskScheduler scheduler, Messages messages) {
         this.plugin = plugin;
         this.config = config;
         this.horseDao = horseDao;
@@ -99,7 +99,7 @@ public final class HorseManager {
 
         Location spawnLocation = station.get().center();
         economy.withdraw(player, definition.price());
-        scheduler.runAt(spawnLocation, () -> spawnPurchasedHorse(player, tier, definition, spawnLocation));
+        scheduler.execute(spawnLocation, () -> spawnPurchasedHorse(player, tier, definition, spawnLocation));
     }
 
     private void spawnPurchasedHorse(Player player, HorseTier tier, TierDefinition definition, Location spawnLocation) {
@@ -143,7 +143,7 @@ public final class HorseManager {
                 System.currentTimeMillis()
         );
         ownedHorses.put(player.getUniqueId(), owned);
-        scheduler.runAsync(() -> horseDao.insert(owned));
+        scheduler.runTaskAsynchronously(() -> horseDao.insert(owned));
 
         messages.send(player, "purchase-success",
                 Placeholder.parsed("tier", definition.displayName()),
@@ -162,7 +162,7 @@ public final class HorseManager {
         // don't know yet. Using anything else here (e.g. a DB-cached "last known" spot from
         // whenever it was last dismounted) risks landing on the wrong Folia region entirely
         // if the horse has since moved, which silently breaks entity/region lookups below.
-        scheduler.runAt(player.getLocation(), () -> completeSale(player, owned));
+        scheduler.execute(player.getLocation(), () -> completeSale(player, owned));
     }
 
     private void completeSale(Player player, OwnedHorse owned) {
@@ -182,7 +182,7 @@ public final class HorseManager {
         horse.remove();
         economy.deposit(player, refund);
         ownedHorses.remove(owned.ownerUuid());
-        scheduler.runAsync(() -> horseDao.delete(owned.horseUuid()));
+        scheduler.runTaskAsynchronously(() -> horseDao.delete(owned.horseUuid()));
 
         messages.send(player, "sell-success", Placeholder.unparsed("refund", String.valueOf(refund)));
     }
@@ -239,7 +239,7 @@ public final class HorseManager {
         long hitAt = System.currentTimeMillis();
         lastHitAt.put(horseUuid, hitAt);
 
-        scheduler.runLaterAtEntity(horse, () -> {
+        scheduler.runTaskLater(horse, () -> {
             Long mostRecentHit = lastHitAt.get(horseUuid);
             boolean hitAgainSince = mostRecentHit == null || mostRecentHit != hitAt;
             if (hitAgainSince || !horse.isValid() || !horse.getPassengers().isEmpty()) {
@@ -256,6 +256,6 @@ public final class HorseManager {
         if (ownerUuid != null) {
             ownedHorses.remove(UUID.fromString(ownerUuid));
         }
-        scheduler.runAsync(() -> horseDao.delete(horse.getUniqueId()));
+        scheduler.runTaskAsynchronously(() -> horseDao.delete(horse.getUniqueId()));
     }
 }
