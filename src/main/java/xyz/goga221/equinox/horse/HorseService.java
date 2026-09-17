@@ -2,7 +2,6 @@ package xyz.goga221.equinox.horse;
 
 import xyz.goga221.equinox.config.ConfigManager;
 import xyz.goga221.equinox.config.TierDefinition;
-import xyz.goga221.equinox.data.HorseRepository;
 import xyz.goga221.equinox.economy.EconomyProvider;
 import xyz.goga221.equinox.station.Station;
 import xyz.goga221.equinox.station.StationService;
@@ -28,6 +27,7 @@ import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.logging.Level;
 
 /**
  * Owns the whole purchase/sell lifecycle: ownership checks, spending/refunding through
@@ -52,8 +52,8 @@ public final class HorseService {
     private final Map<UUID, Long> lastHitAt = new ConcurrentHashMap<>();
 
     // Ownership is checked constantly (every purchase, sell and /stable open) but changes rarely,
-    // so it's kept in memory - keyed by owner UUID - instead of hitting SQLite on those hot paths.
-    // Seeded once from the database at startup; every purchase/sell/death keeps it in sync.
+    // so it's kept in memory - keyed by owner UUID - instead of hitting the database on those hot
+    // paths. Seeded once from the repository at startup; every purchase/sell/death keeps it in sync.
     private final Map<UUID, OwnedHorse> ownedHorses = new ConcurrentHashMap<>();
 
     public HorseService(Plugin plugin, ConfigManager config, HorseRepository horseRepository, StationService stationService,
@@ -71,10 +71,10 @@ public final class HorseService {
 
     /** Loads every owned horse into the cache off the main thread, returning how many were loaded. */
     public CompletableFuture<Integer> loadOwnedHorsesIntoCache() {
-        return horseRepository.findAllAsync(scheduler).thenApply(loaded -> {
+        return horseRepository.loadAll().thenApply(loaded -> {
             ownedHorses.clear();
             for (OwnedHorse owned : loaded) {
-                ownedHorses.put(owned.ownerUuid(), owned);
+                ownedHorses.put(owned.getOwnerUuid(), owned);
             }
             return ownedHorses.size();
         });
@@ -101,20 +101,20 @@ public final class HorseService {
             return;
         }
 
-        if (!economy.has(player, definition.price())) {
+        if (!economy.has(player, definition.getPrice())) {
             messages.send(player, "not-enough-money");
             return;
         }
 
         Location spawnLocation = station.get().center();
-        economy.withdraw(player, definition.price());
+        economy.withdraw(player, definition.getPrice());
         scheduler.execute(spawnLocation, () -> spawnPurchasedHorse(player, tier, definition, spawnLocation));
     }
 
     private void spawnPurchasedHorse(Player player, HorseTier tier, TierDefinition definition, Location spawnLocation) {
         Horse horse = (Horse) spawnLocation.getWorld().spawnEntity(spawnLocation, EntityType.HORSE);
-        horse.setColor(definition.color());
-        horse.setStyle(definition.style());
+        horse.setColor(definition.getColor());
+        horse.setStyle(definition.getStyle());
         horse.setTamed(true);
         horse.setOwner(player);
         horse.setAdult();
@@ -125,17 +125,17 @@ public final class HorseService {
 
         AttributeInstance health = horse.getAttribute(Attribute.MAX_HEALTH);
         if (health != null) {
-            health.setBaseValue(definition.health());
+            health.setBaseValue(definition.getHealth());
         }
         AttributeInstance speed = horse.getAttribute(Attribute.MOVEMENT_SPEED);
         if (speed != null) {
-            speed.setBaseValue(definition.speed());
+            speed.setBaseValue(definition.getSpeed());
         }
         AttributeInstance jump = horse.getAttribute(Attribute.JUMP_STRENGTH);
         if (jump != null) {
-            jump.setBaseValue(definition.jumpStrength());
+            jump.setBaseValue(definition.getJumpStrength());
         }
-        horse.setHealth(definition.health());
+        horse.setHealth(definition.getHealth());
 
         horse.getPersistentDataContainer().set(ownerKey, PersistentDataType.STRING, player.getUniqueId().toString());
         horse.getPersistentDataContainer().set(tierKey, PersistentDataType.STRING, tier.name());
@@ -144,7 +144,7 @@ public final class HorseService {
                 horse.getUniqueId(),
                 player.getUniqueId(),
                 tier,
-                definition.price(),
+                definition.getPrice(),
                 spawnLocation.getWorld().getName(),
                 spawnLocation.getX(),
                 spawnLocation.getY(),
@@ -152,11 +152,14 @@ public final class HorseService {
                 System.currentTimeMillis()
         );
         ownedHorses.put(player.getUniqueId(), owned);
-        scheduler.runTaskAsynchronously(() -> horseRepository.insert(owned));
+        horseRepository.save(owned).exceptionally(throwable -> {
+            plugin.getLogger().log(Level.SEVERE, "Failed to persist purchased horse " + owned.getHorseUuid(), throwable);
+            return null;
+        });
 
         messages.send(player, "purchase-success",
-                Placeholder.parsed("tier", definition.displayName()),
-                Placeholder.unparsed("price", String.valueOf(definition.price())));
+                Placeholder.parsed("tier", definition.getDisplayName()),
+                Placeholder.unparsed("price", String.valueOf(definition.getPrice())));
     }
 
     public void sell(Player player) {
@@ -175,7 +178,7 @@ public final class HorseService {
     }
 
     private void completeSale(Player player, OwnedHorse owned) {
-        Horse horse = findHorseEntity(player.getWorld(), owned.horseUuid());
+        Horse horse = findHorseEntity(player.getWorld(), owned.getHorseUuid());
         if (horse == null) {
             messages.send(player, "horse-not-found");
             return;
@@ -187,11 +190,14 @@ public final class HorseService {
             return;
         }
 
-        double refund = owned.costPaid() * config.getRefundPercent();
+        double refund = owned.getCostPaid() * config.getRefundPercent();
         horse.remove();
         economy.deposit(player, refund);
-        ownedHorses.remove(owned.ownerUuid());
-        scheduler.runTaskAsynchronously(() -> horseRepository.delete(owned.horseUuid()));
+        ownedHorses.remove(owned.getOwnerUuid());
+        horseRepository.delete(owned.getHorseUuid()).exceptionally(throwable -> {
+            plugin.getLogger().log(Level.SEVERE, "Failed to remove sold horse " + owned.getHorseUuid() + " from storage", throwable);
+            return null;
+        });
 
         messages.send(player, "sell-success", Placeholder.unparsed("refund", String.valueOf(refund)));
     }
@@ -265,6 +271,9 @@ public final class HorseService {
         if (ownerUuid != null) {
             ownedHorses.remove(UUID.fromString(ownerUuid));
         }
-        scheduler.runTaskAsynchronously(() -> horseRepository.delete(horse.getUniqueId()));
+        horseRepository.delete(horse.getUniqueId()).exceptionally(throwable -> {
+            plugin.getLogger().log(Level.SEVERE, "Failed to remove dead horse " + horse.getUniqueId() + " from storage", throwable);
+            return null;
+        });
     }
 }

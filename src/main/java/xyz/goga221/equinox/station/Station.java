@@ -1,19 +1,25 @@
 package xyz.goga221.equinox.station;
 
+import lombok.AllArgsConstructor;
+import lombok.Getter;
+import lombok.With;
 import org.bukkit.Bukkit;
 import org.bukkit.Location;
 import org.bukkit.World;
 
 /** A registered buy/sell station: the WorldGuard region it's backed by, plus that region's cached center point. */
-public record Station(
-        String name,
-        StationType type,
-        String world,
-        String regionId,
-        double x,
-        double y,
-        double z
-) {
+@Getter
+@With
+@AllArgsConstructor
+public class Station {
+
+    private final String name;
+    private final StationType type;
+    private final String world;
+    private final String regionId;
+    private final double x;
+    private final double y;
+    private final double z;
 
     public Location center() {
         World bukkitWorld = Bukkit.getWorld(world);

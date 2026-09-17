@@ -57,11 +57,11 @@ public final class StableMenu {
         }
 
         ItemBuilder builder = new ItemBuilder(material)
-                .setDisplayName(new AdventureComponentWrapper(MINI_MESSAGE.deserialize(definition.displayName())))
+                .setDisplayName(new AdventureComponentWrapper(MINI_MESSAGE.deserialize(definition.getDisplayName())))
                 .addLoreLines(
-                        new AdventureComponentWrapper(MINI_MESSAGE.deserialize("<gray>Price: <white>" + definition.price())),
-                        new AdventureComponentWrapper(MINI_MESSAGE.deserialize("<gray>Health: <white>" + definition.health())),
-                        new AdventureComponentWrapper(MINI_MESSAGE.deserialize("<gray>Speed: <white>" + definition.speed())),
+                        new AdventureComponentWrapper(MINI_MESSAGE.deserialize("<gray>Price: <white>" + definition.getPrice())),
+                        new AdventureComponentWrapper(MINI_MESSAGE.deserialize("<gray>Health: <white>" + definition.getHealth())),
+                        new AdventureComponentWrapper(MINI_MESSAGE.deserialize("<gray>Speed: <white>" + definition.getSpeed())),
                         new AdventureComponentWrapper(alreadyOwnsHorse
                                 ? MINI_MESSAGE.deserialize("<red>You already own a horse")
                                 : Component.empty())

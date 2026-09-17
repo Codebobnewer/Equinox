@@ -127,7 +127,8 @@ is standing inside a `SELL` station's region.
 
 See `src/main/resources/config.yml` for the full set of options:
 
-- `database.file` - SQLite filename, stored in the plugin's data folder.
+- `database.file` - SQLite filename (owned-horse records only), stored in the plugin's data folder.
+  Stations are hand-editable admin data and live in `stations.yml` instead, not this file.
 - `economy.refund-percent` - fraction of the purchase price refunded on sell.
 - `horse.panic-duration-ticks` - how long a hit horse's AI stays on before it goes back to
   standing still, if it isn't hit again in the meantime.
@@ -137,15 +138,29 @@ See `src/main/resources/config.yml` for the full set of options:
 
 ## Architecture notes
 
+- **Repository / Service split.** Storage lives behind a `Repository` interface per domain
+  (`HorseRepository` -> `SqliteHorseRepository`; `StationRepository` -> `YamlStationRepository`);
+  business logic lives in `HorseService`/`StationService`. Commands (`StableCommand`) and the GUI
+  (`StableMenu`) are thin callers into those services - no logic of their own.
+- **Horses are a database; stations are a file.** Ownership is core gameplay state that changes
+  constantly and nobody hand-edits, so it's SQLite. Stations are small, admin-authored location
+  data - the kind of thing staff should be able to open and edit directly - so they're YAML
+  (`stations.yml`), read/written exclusively through `YamlStationRepository`.
 - **Economy is stubbed.** `EconomyProvider` is an interface; `StubEconomyProvider` always
   succeeds and just logs withdrawals/deposits. Swap in a Vault-backed implementation later without
   touching anything else.
-- **Ownership is cached in memory.** `HorseManager` keeps a `Map<UUID, OwnedHorse>` populated once
-  at startup, so purchase/sell/menu-open never block the calling thread on a database read. SQLite
-  is only touched for durability (writes happen asynchronously off the game thread).
-- **Folia-safe.** All entity spawning and world mutation goes through `SchedulerService`, a thin
-  wrapper over [UniversalScheduler](https://github.com/Anon8281/UniversalScheduler), instead of
-  calling `Bukkit.getScheduler()` or `World.spawn()` directly.
+- **Ownership is cached in memory.** `HorseService` keeps a `Map<UUID, OwnedHorse>` loaded fully
+  asynchronously at startup (`loadOwnedHorsesIntoCache()`, logged once it actually finishes), so
+  purchase/sell/menu-open never block the calling thread on I/O, and a slow disk can't stall
+  server startup either.
+- **Folia-safe.** All entity spawning, world mutation, and DB/file I/O goes through
+  [UniversalScheduler](https://github.com/Anon8281/UniversalScheduler)'s `TaskScheduler` directly -
+  a region/entity-scoped call for anything tied to a location or entity, `runTaskAsynchronously`
+  for I/O - never `Bukkit.getScheduler()` or a raw `Thread`.
+- **Static service locator.** `Equinox` exposes its wired services as static accessors
+  (`Equinox.getHorseService()`, `getStationService()`, `getScheduler()`, `getMessages()`) for
+  anything outside the constructor-injected call graph that needs them - it's an access point,
+  not a place business logic lives.
 
 ### Version pinning
 

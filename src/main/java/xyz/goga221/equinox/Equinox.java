@@ -2,16 +2,16 @@ package xyz.goga221.equinox;
 
 import xyz.goga221.equinox.command.StableCommand;
 import xyz.goga221.equinox.config.ConfigManager;
-import xyz.goga221.equinox.data.DatabaseManager;
-import xyz.goga221.equinox.data.HorseRepository;
-import xyz.goga221.equinox.data.StationRepository;
 import xyz.goga221.equinox.economy.EconomyProvider;
 import xyz.goga221.equinox.economy.StubEconomyProvider;
 import xyz.goga221.equinox.gui.StableMenu;
 import xyz.goga221.equinox.horse.HorseListener;
 import xyz.goga221.equinox.horse.HorseService;
+import xyz.goga221.equinox.horse.SqliteHorseRepository;
+import xyz.goga221.equinox.station.StationRepository;
 import xyz.goga221.equinox.station.StationService;
 import xyz.goga221.equinox.station.WorldGuardHook;
+import xyz.goga221.equinox.station.YamlStationRepository;
 import xyz.goga221.equinox.util.Messages;
 import com.github.Anon8281.universalScheduler.UniversalScheduler;
 import com.github.Anon8281.universalScheduler.scheduling.schedulers.TaskScheduler;
@@ -23,12 +23,18 @@ import java.util.logging.Level;
 /**
  * Wires up every Equinox component on enable and tears them down on disable. Holds no business
  * logic itself - that all lives in {@link HorseService}/{@link StationService} - this class is
- * purely construction/lifecycle plumbing.
+ * purely construction/lifecycle plumbing, plus the static service locator other code (and, in
+ * principle, other plugins) can reach Equinox's services through.
  */
 public final class Equinox extends JavaPlugin {
 
-    private DatabaseManager databaseManager;
-    private TaskScheduler scheduler;
+    private static Equinox instance;
+    private static HorseService horseService;
+    private static StationService stationService;
+    private static Messages messages;
+    private static TaskScheduler scheduler;
+
+    private SqliteHorseRepository horseRepository;
 
     // No onLoad() override: CommandAPI v12 ships as a genuine Paper plugin with its own
     // Bootstrapper, which calls CommandAPI.onLoad() itself before any classic Bukkit-style
@@ -39,12 +45,13 @@ public final class Equinox extends JavaPlugin {
         CommandAPI.onEnable();
 
         ConfigManager configManager = new ConfigManager(this);
-        Messages messages = new Messages(configManager);
+        Messages messagesInstance = new Messages(configManager);
+        TaskScheduler schedulerInstance = UniversalScheduler.getScheduler(this);
 
         try {
-            databaseManager = new DatabaseManager(this, configManager.getDatabaseFile());
+            horseRepository = new SqliteHorseRepository(getDataFolder(), configManager.getDatabaseFile(), schedulerInstance);
         } catch (RuntimeException e) {
-            // DatabaseManager already bounds connection attempts to a few seconds instead of
+            // SqliteHorseRepository already bounds connection attempts to a few seconds instead of
             // hanging (see its own comment), but if it still fails outright - a corrupted file,
             // a permissions problem, whatever - fail this plugin cleanly instead of letting the
             // exception surface as a half-initialized, harder-to-diagnose state.
@@ -53,29 +60,31 @@ public final class Equinox extends JavaPlugin {
             return;
         }
 
-        HorseRepository horseRepository = new HorseRepository(databaseManager, getLogger());
-        StationRepository stationRepository = new StationRepository(databaseManager, getLogger());
-
+        StationRepository stationRepository = new YamlStationRepository(getDataFolder(), schedulerInstance);
         WorldGuardHook worldGuardHook = new WorldGuardHook();
-        StationService stationService = new StationService(stationRepository, worldGuardHook);
+        StationService stationServiceInstance = new StationService(stationRepository, worldGuardHook);
 
-        scheduler = UniversalScheduler.getScheduler(this);
         EconomyProvider economyProvider = new StubEconomyProvider(getLogger());
+        HorseService horseServiceInstance = new HorseService(this, configManager, horseRepository, stationServiceInstance,
+                economyProvider, schedulerInstance, messagesInstance);
 
-        HorseService horseService = new HorseService(this, configManager, horseRepository, stationService,
-                economyProvider, scheduler, messages);
+        instance = this;
+        scheduler = schedulerInstance;
+        messages = messagesInstance;
+        stationService = stationServiceInstance;
+        horseService = horseServiceInstance;
 
         // Loaded off the main thread so a stalled database can't block server startup at all -
         // both loads are independent (no station-depends-on-horse ordering needed), so they just
         // run side by side and each logs once it's actually done.
-        stationService.loadStationsIntoCache(scheduler).whenComplete((count, throwable) -> {
+        stationServiceInstance.loadStationsIntoCache().whenComplete((count, throwable) -> {
             if (throwable != null) {
                 getLogger().log(Level.SEVERE, "Failed to load stations", throwable);
             } else {
                 getLogger().info("Loaded " + count + " station(s)");
             }
         });
-        horseService.loadOwnedHorsesIntoCache().whenComplete((count, throwable) -> {
+        horseServiceInstance.loadOwnedHorsesIntoCache().whenComplete((count, throwable) -> {
             if (throwable != null) {
                 getLogger().log(Level.SEVERE, "Failed to load owned horses", throwable);
             } else {
@@ -83,26 +92,51 @@ public final class Equinox extends JavaPlugin {
             }
         });
 
-        getServer().getPluginManager().registerEvents(new HorseListener(horseService, messages), this);
+        getServer().getPluginManager().registerEvents(new HorseListener(horseServiceInstance, messagesInstance), this);
 
-        StableMenu stableMenu = new StableMenu(configManager, horseService);
-        new StableCommand(this, stableMenu, horseService, stationService, messages).register();
+        StableMenu stableMenu = new StableMenu(configManager, horseServiceInstance);
+        new StableCommand(this, stableMenu, horseServiceInstance, stationServiceInstance, messagesInstance).register();
     }
 
     @Override
     public void onDisable() {
-        if (databaseManager != null) {
-            databaseManager.close();
+        if (horseRepository != null) {
+            horseRepository.close();
         }
         if (scheduler != null) {
             // Cancels this plugin's own pending scheduled tasks (e.g. a horse's panic-AI timeout)
             // so none of them fire after the database above is already closed.
             scheduler.cancelTasks();
         }
+        instance = null;
+        horseService = null;
+        stationService = null;
+        messages = null;
+        scheduler = null;
         // Deliberately not calling CommandAPI.onDisable() here: CommandAPI runs as its own
         // separate plugin on this server (see plugin.yml's depend: [CommandAPI]), so its
         // CommandAPIHandler is a single shared instance used by every dependent plugin.
         // Calling onDisable() from a dependent plugin tears that shared instance down for
         // everyone, not just Equinox - only the actual CommandAPI plugin should do that.
+    }
+
+    public static Equinox getInstance() {
+        return instance;
+    }
+
+    public static HorseService getHorseService() {
+        return horseService;
+    }
+
+    public static StationService getStationService() {
+        return stationService;
+    }
+
+    public static Messages getMessages() {
+        return messages;
+    }
+
+    public static TaskScheduler getScheduler() {
+        return scheduler;
     }
 }

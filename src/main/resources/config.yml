@@ -1,6 +1,8 @@
 # Equinox configuration
 
 database:
+  # SQLite file backing owned-horse records (core gameplay state, not just logging). Stations are
+  # hand-editable admin data, so they live in stations.yml instead - see that file, not here.
   file: equinox.db
 
 economy:
@@ -59,3 +61,4 @@ messages:
   station-not-found: "<red>No station named '<name>'."
   station-list-empty: "<red>No stations configured."
   station-list-entry: "<gray>- <name> [<type>] world=<world> region=<region>"
+  station-save-failed: "<red>Something went wrong saving that station - check the console."
