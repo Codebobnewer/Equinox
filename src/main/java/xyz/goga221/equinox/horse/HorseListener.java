@@ -10,12 +10,11 @@ import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
 import org.bukkit.event.entity.EntityDamageByEntityEvent;
-import org.bukkit.event.entity.EntityDamageEvent;
 import org.bukkit.event.entity.EntityDeathEvent;
 import org.bukkit.event.vehicle.VehicleEnterEvent;
 import org.bukkit.event.vehicle.VehicleExitEvent;
 
-/** Translates raw Bukkit events into {@link HorseService} calls: ride-lock, hit-blocking, panic AI, cleanup on death. */
+/** Translates raw Bukkit events into {@link HorseService} calls: ride-lock, hit-blocking, cleanup on death. */
 @RequiredArgsConstructor
 public final class HorseListener implements Listener {
 
@@ -23,8 +22,8 @@ public final class HorseListener implements Listener {
     private final Messages messages;
 
     // ignoreCancelled: if some other plugin (region protection, etc.) already blocked this mount,
-    // we must not still flip the horse's AI on as if it succeeded - that desyncs AI state from
-    // what actually happened, since the player never actually got on.
+    // we must not still act as if it succeeded - that desyncs pathfinder state from what actually
+    // happened, since the player never actually got on.
     @EventHandler(ignoreCancelled = true)
     public void onVehicleEnter(VehicleEnterEvent event) {
         if (!(event.getVehicle() instanceof Horse horse) || !horseService.isTaggedHorse(horse)) {
@@ -42,7 +41,7 @@ public final class HorseListener implements Listener {
     }
 
     // Same reasoning as onVehicleEnter: a cancelled exit means the player is still riding, so
-    // turning AI back off here would break their control of the horse mid-ride.
+    // starting the follow behaviour here would fight their control of the horse mid-ride.
     @EventHandler(ignoreCancelled = true)
     public void onVehicleExit(VehicleExitEvent event) {
         if (event.getVehicle() instanceof Horse horse && horseService.isTaggedHorse(horse)) {
@@ -50,17 +49,22 @@ public final class HorseListener implements Listener {
         }
     }
 
-    // LOWEST so this cancellation happens before onHorseDamaged() below sees the event - both
-    // handlers share EntityDamageEvent's handler list since EntityDamageByEntityEvent doesn't
-    // declare its own, and ignoreCancelled there means a blocked hit never triggers a panic.
+    // Nobody can actually damage a tagged horse, so the owner's own punch is free to repurpose:
+    // a direct melee hit (not a projectile) from the owner toggles stay instead of doing nothing.
     @EventHandler(priority = EventPriority.LOWEST, ignoreCancelled = true)
     public void onPlayerHitHorse(EntityDamageByEntityEvent event) {
         if (!(event.getEntity() instanceof Horse horse) || !horseService.isTaggedHorse(horse)) {
             return;
         }
         Player attacker = attackingPlayer(event.getDamager());
-        if (attacker != null) {
-            event.setCancelled(true);
+        if (attacker == null) {
+            return;
+        }
+        event.setCancelled(true);
+
+        if (event.getDamager() instanceof Player owner && horseService.isOwner(horse, owner)) {
+            horseService.toggleStay(horse, owner);
+        } else {
             messages.send(attacker, "cant-hit-horse");
         }
     }
@@ -73,16 +77,6 @@ public final class HorseListener implements Listener {
             return shooter;
         }
         return null;
-    }
-
-    // ignoreCancelled: this event fires for every point of damage to every entity on the whole
-    // server, so skipping cancelled ones before our handler even runs (rather than checking
-    // isCancelled() ourselves) avoids paying for a method dispatch on hits that didn't land.
-    @EventHandler(ignoreCancelled = true)
-    public void onHorseDamaged(EntityDamageEvent event) {
-        if (event.getEntity() instanceof Horse horse && horseService.isTaggedHorse(horse)) {
-            horseService.onAttacked(horse);
-        }
     }
 
     @EventHandler

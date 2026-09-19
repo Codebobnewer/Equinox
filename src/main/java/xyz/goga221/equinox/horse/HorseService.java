@@ -6,8 +6,10 @@ import xyz.goga221.equinox.economy.EconomyProvider;
 import xyz.goga221.equinox.station.Station;
 import xyz.goga221.equinox.station.StationService;
 import xyz.goga221.equinox.util.Messages;
+import com.destroystokyo.paper.entity.Pathfinder;
 import com.github.Anon8281.universalScheduler.scheduling.schedulers.TaskScheduler;
 import net.kyori.adventure.text.minimessage.tag.resolver.Placeholder;
+import org.bukkit.Bukkit;
 import org.bukkit.Location;
 import org.bukkit.Material;
 import org.bukkit.NamespacedKey;
@@ -27,6 +29,7 @@ import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ThreadLocalRandom;
 import java.util.logging.Level;
 
 /**
@@ -35,6 +38,19 @@ import java.util.logging.Level;
  * it so {@link HorseListener} can enforce exclusive riding and clean up on death.
  */
 public final class HorseService {
+
+    // How often the follow loop re-evaluates every owned horse's distance to its owner.
+    private static final long FOLLOW_PERIOD_TICKS = 20L;
+    // Matches vanilla's wolf FollowOwnerGoal thresholds: start walking once far enough away,
+    // keep going until close again, rather than flickering on/off right at one boundary.
+    private static final double FOLLOW_START_DISTANCE = 10.0;
+    private static final double FOLLOW_STOP_DISTANCE = 3.0;
+    private static final double FOLLOW_SPEED = 1.0;
+    // Matches vanilla's wolf TeleportToOwnerGoal: too far to realistically walk back, so it
+    // teleports to a safe spot near the owner instead of trudging across the map.
+    private static final double FOLLOW_TELEPORT_DISTANCE = 12.0;
+    private static final int TELEPORT_SEARCH_ATTEMPTS = 10;
+    private static final int TELEPORT_SEARCH_RADIUS = 3;
 
     private final Plugin plugin;
     private final ConfigManager config;
@@ -46,10 +62,7 @@ public final class HorseService {
 
     private final NamespacedKey ownerKey;
     private final NamespacedKey tierKey;
-
-    // Tracks the timestamp of each horse's most recent hit while panicking, purely in-memory,
-    // so a repeated hit can restart the panic timer instead of a stale delayed task cutting it short.
-    private final Map<UUID, Long> lastHitAt = new ConcurrentHashMap<>();
+    private final NamespacedKey stayKey;
 
     // Ownership is checked constantly (every purchase, sell and /stable open) but changes rarely,
     // so it's kept in memory - keyed by owner UUID - instead of hitting the database on those hot
@@ -67,6 +80,8 @@ public final class HorseService {
         this.messages = messages;
         this.ownerKey = new NamespacedKey(plugin, "owner");
         this.tierKey = new NamespacedKey(plugin, "tier");
+        this.stayKey = new NamespacedKey(plugin, "stay");
+        startFollowLoop();
     }
 
     /** Loads every owned horse into the cache off the main thread, returning how many were loaded. */
@@ -119,9 +134,6 @@ public final class HorseService {
         horse.setOwner(player);
         horse.setAdult();
         horse.getInventory().setSaddle(new ItemStack(Material.SADDLE));
-        // Stands still until someone actually rides it; disabling AI stops it wandering off,
-        // but knockback from being attacked still applies since that's physics, not AI.
-        horse.setAI(false);
 
         AttributeInstance health = horse.getAttribute(Attribute.MAX_HEALTH);
         if (health != null) {
@@ -221,52 +233,128 @@ public final class HorseService {
     }
 
     /**
-     * Re-enables AI so the owner can actually ride it. Called once the mount is confirmed to be
-     * the owner (see {@link HorseListener}) - an unauthorized mount is cancelled before this runs.
+     * Hands full control to the rider by cancelling any in-progress "walk to owner" path - called
+     * once the mount is confirmed to be the owner (see {@link HorseListener}); an unauthorized
+     * mount is cancelled before this runs.
      */
     public void onMount(Horse horse) {
-        horse.setAI(true);
+        Pathfinder pathfinder = horse.getPathfinder();
+        if (pathfinder.hasPath()) {
+            pathfinder.stopPathfinding();
+        }
     }
 
     /**
-     * Stops the horse wandering off once it's riderless again. AI off doesn't stop it reacting to
-     * being attacked - knockback from damage is physics, not AI - it just stops idle wandering.
+     * Kicks off an immediate follow check on dismount instead of waiting for the next periodic
+     * {@link #startFollowLoop()} cycle, so the horse doesn't stand around for up to a second first.
      */
     public void onDismount(Horse horse) {
-        horse.setAI(false);
+        Player owner = onlineOwner(horse);
+        if (owner != null) {
+            scheduler.execute(horse, () -> followOwner(horse, owner));
+        }
     }
 
     /**
-     * A riderless horse normally has AI off (see {@link #onDismount}). Getting hit re-enables AI
-     * so it can panic/flee like a real mob, then switches it back off after the configured
-     * duration - unless it gets hit again first, which pushes the timer back out.
+     * Every owned horse, wolf-style: walk toward the owner once they stray far enough away, and
+     * stop again once close. Runs from construction rather than being tied to any single horse's
+     * lifecycle, so it covers horses that already existed before a restart too - it just walks
+     * whatever's currently in {@link #ownedHorses} each cycle.
      */
-    public void onAttacked(Horse horse) {
-        if (!horse.getPassengers().isEmpty()) {
-            // Already being ridden, AI is already on for the rider's own control - nothing to do,
-            // and onDismount() will turn it back off once they actually get off.
+    private void startFollowLoop() {
+        scheduler.runTaskTimer(() -> {
+            for (OwnedHorse owned : ownedHorses.values()) {
+                Player owner = Bukkit.getPlayer(owned.getOwnerUuid());
+                if (owner == null) {
+                    continue;
+                }
+                if (Bukkit.getEntity(owned.getHorseUuid()) instanceof Horse horse) {
+                    scheduler.execute(horse, () -> followOwner(horse, owner));
+                }
+            }
+        }, FOLLOW_PERIOD_TICKS, FOLLOW_PERIOD_TICKS);
+    }
+
+    /**
+     * Toggles the owner's punch-to-command stay flag (see {@link HorseListener}). Staying doesn't
+     * touch {@link Horse#setAI}, so the horse still reacts normally to everything else - it just
+     * stops the follow loop from walking or teleporting it toward the owner.
+     */
+    public void toggleStay(Horse horse, Player owner) {
+        boolean nowStaying = !isStaying(horse);
+        horse.getPersistentDataContainer().set(stayKey, PersistentDataType.BOOLEAN, nowStaying);
+
+        if (nowStaying) {
+            Pathfinder pathfinder = horse.getPathfinder();
+            if (pathfinder.hasPath()) {
+                pathfinder.stopPathfinding();
+            }
+            messages.send(owner, "horse-stay-enabled");
+        } else {
+            messages.send(owner, "horse-stay-disabled");
+        }
+    }
+
+    private boolean isStaying(Horse horse) {
+        return horse.getPersistentDataContainer().getOrDefault(stayKey, PersistentDataType.BOOLEAN, false);
+    }
+
+    private void followOwner(Horse horse, Player owner) {
+        if (!horse.getPassengers().isEmpty() || !horse.getWorld().equals(owner.getWorld()) || isStaying(horse)) {
+            // Ridden, the owner's elsewhere entirely, or told to stay put - leave it alone either way.
             return;
         }
 
-        horse.setAI(true);
+        double distance = horse.getLocation().distance(owner.getLocation());
+        if (distance > FOLLOW_TELEPORT_DISTANCE) {
+            // The safe-spot search reads blocks around the owner's position, so it needs to run
+            // on the owner's own region, not the horse's - teleportAsync() is safe to call from
+            // there and handles moving the horse across into that region itself.
+            scheduler.execute(owner, () -> teleportToOwner(horse, owner));
+            return;
+        }
 
-        UUID horseUuid = horse.getUniqueId();
-        long hitAt = System.currentTimeMillis();
-        lastHitAt.put(horseUuid, hitAt);
-
-        scheduler.runTaskLater(horse, () -> {
-            Long mostRecentHit = lastHitAt.get(horseUuid);
-            boolean hitAgainSince = mostRecentHit == null || mostRecentHit != hitAt;
-            if (hitAgainSince || !horse.isValid() || !horse.getPassengers().isEmpty()) {
-                return;
+        Pathfinder pathfinder = horse.getPathfinder();
+        if (distance <= FOLLOW_STOP_DISTANCE) {
+            if (pathfinder.hasPath()) {
+                pathfinder.stopPathfinding();
             }
-            lastHitAt.remove(horseUuid);
-            horse.setAI(false);
-        }, config.getHorsePanicDurationTicks());
+        } else if (distance >= FOLLOW_START_DISTANCE || pathfinder.hasPath()) {
+            pathfinder.moveTo(owner, FOLLOW_SPEED);
+        }
+    }
+
+    private void teleportToOwner(Horse horse, Player owner) {
+        Location safeSpot = findSafeLocationNear(owner.getLocation());
+        if (safeSpot != null) {
+            horse.teleportAsync(safeSpot);
+        }
+        // No safe spot found this attempt - the loop just tries again next cycle.
+    }
+
+    private Location findSafeLocationNear(Location center) {
+        World world = center.getWorld();
+        ThreadLocalRandom random = ThreadLocalRandom.current();
+        for (int attempt = 0; attempt < TELEPORT_SEARCH_ATTEMPTS; attempt++) {
+            int x = center.getBlockX() + random.nextInt(-TELEPORT_SEARCH_RADIUS, TELEPORT_SEARCH_RADIUS + 1);
+            int z = center.getBlockZ() + random.nextInt(-TELEPORT_SEARCH_RADIUS, TELEPORT_SEARCH_RADIUS + 1);
+            int y = world.getHighestBlockYAt(x, z) + 1;
+
+            if (world.getBlockAt(x, y - 1, z).getType().isSolid()
+                    && !world.getBlockAt(x, y, z).getType().isSolid()
+                    && !world.getBlockAt(x, y + 1, z).getType().isSolid()) {
+                return new Location(world, x + 0.5, y, z + 0.5, center.getYaw(), 0);
+            }
+        }
+        return null;
+    }
+
+    private Player onlineOwner(Horse horse) {
+        String ownerUuid = horse.getPersistentDataContainer().get(ownerKey, PersistentDataType.STRING);
+        return ownerUuid == null ? null : Bukkit.getPlayer(UUID.fromString(ownerUuid));
     }
 
     public void handleDeath(Horse horse) {
-        lastHitAt.remove(horse.getUniqueId());
         String ownerUuid = horse.getPersistentDataContainer().get(ownerKey, PersistentDataType.STRING);
         if (ownerUuid != null) {
             ownedHorses.remove(UUID.fromString(ownerUuid));

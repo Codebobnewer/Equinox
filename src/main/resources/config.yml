@@ -9,12 +9,6 @@ economy:
   # Fraction of the original purchase price refunded when a horse is sold back.
   refund-percent: 0.8
 
-horse:
-  # An unridden horse normally stands still (AI off) so it doesn't wander off. Getting hit
-  # re-enables AI for this many ticks (20 ticks = 1 second) so it can panic/flee, then it goes
-  # back to standing still - unless it gets hit again first, which restarts this timer.
-  panic-duration-ticks: 100
-
 # Horse tiers offered in the /stable menu. Stats are applied to the spawned horse's
 # GENERIC_MAX_HEALTH and GENERIC_MOVEMENT_SPEED attributes and jump strength.
 # color/style match org.bukkit.entity.Horse.Color / Horse.Style enum names.
@@ -55,6 +49,8 @@ messages:
   sell-success: "<green>You sold your horse back for <white><refund></white>."
   not-owner: "<red>This horse isn't yours."
   cant-hit-horse: "<red>You can't attack someone else's horse."
+  horse-stay-enabled: "<green>Your horse will now stay put."
+  horse-stay-disabled: "<green>Your horse will follow you again."
   station-set-success: "<green><type> station '<name>' set to region '<region>'."
   station-set-failed: "<red>No region named '<region>' found in <world>."
   station-removed: "<green>Removed station '<name>'."

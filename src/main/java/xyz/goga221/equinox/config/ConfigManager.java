@@ -19,7 +19,6 @@ public final class ConfigManager {
     private Map<String, String> messages;
     private double refundPercent;
     private String databaseFile;
-    private long horsePanicDurationTicks;
 
     public ConfigManager(JavaPlugin plugin) {
         this.plugin = plugin;
@@ -33,7 +32,6 @@ public final class ConfigManager {
 
         this.databaseFile = config.getString("database.file", "equinox.db");
         this.refundPercent = config.getDouble("economy.refund-percent", 0.8);
-        this.horsePanicDurationTicks = config.getLong("horse.panic-duration-ticks", 100);
 
         Map<HorseTier, TierDefinition> loadedTiers = new EnumMap<>(HorseTier.class);
         ConfigurationSection tiersSection = config.getConfigurationSection("tiers");
@@ -80,10 +78,6 @@ public final class ConfigManager {
 
     public String getDatabaseFile() {
         return databaseFile;
-    }
-
-    public long getHorsePanicDurationTicks() {
-        return horsePanicDurationTicks;
     }
 
     public String getMessage(String key) {

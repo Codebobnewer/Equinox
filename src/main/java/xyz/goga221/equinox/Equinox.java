@@ -94,7 +94,7 @@ public final class Equinox extends JavaPlugin {
 
         getServer().getPluginManager().registerEvents(new HorseListener(horseServiceInstance, messagesInstance), this);
 
-        StableMenu stableMenu = new StableMenu(configManager, horseServiceInstance);
+        StableMenu stableMenu = new StableMenu(this, configManager, horseServiceInstance, schedulerInstance);
         new StableCommand(this, stableMenu, horseServiceInstance, stationServiceInstance, messagesInstance).register();
     }
 
@@ -104,7 +104,7 @@ public final class Equinox extends JavaPlugin {
             horseRepository.close();
         }
         if (scheduler != null) {
-            // Cancels this plugin's own pending scheduled tasks (e.g. a horse's panic-AI timeout)
+            // Cancels this plugin's own pending scheduled tasks (e.g. the horses' follow loop)
             // so none of them fire after the database above is already closed.
             scheduler.cancelTasks();
         }
