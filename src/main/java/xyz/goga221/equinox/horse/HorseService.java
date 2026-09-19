@@ -5,6 +5,7 @@ import xyz.goga221.equinox.config.TierDefinition;
 import xyz.goga221.equinox.economy.EconomyProvider;
 import xyz.goga221.equinox.station.Station;
 import xyz.goga221.equinox.station.StationService;
+import xyz.goga221.equinox.station.WorldGuardHook;
 import xyz.goga221.equinox.util.Messages;
 import com.destroystokyo.paper.entity.Pathfinder;
 import com.github.Anon8281.universalScheduler.scheduling.schedulers.TaskScheduler;
@@ -26,6 +27,7 @@ import org.bukkit.plugin.Plugin;
 
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
@@ -56,6 +58,7 @@ public final class HorseService {
     private final ConfigManager config;
     private final HorseRepository horseRepository;
     private final StationService stationService;
+    private final WorldGuardHook worldGuardHook;
     private final EconomyProvider economy;
     private final TaskScheduler scheduler;
     private final Messages messages;
@@ -69,12 +72,19 @@ public final class HorseService {
     // paths. Seeded once from the repository at startup; every purchase/sell/death keeps it in sync.
     private final Map<UUID, OwnedHorse> ownedHorses = new ConcurrentHashMap<>();
 
+    // Claimed synchronously at the start of purchase(), released once spawnPurchasedHorse() either
+    // finishes or fails. The horse doesn't actually land in ownedHorses until that (deferred, async)
+    // spawn task runs, so without this a player could pass the "already own a horse" check twice by
+    // re-running /stable and buying again before the first purchase's spawn task ever executes.
+    private final Set<UUID> pendingPurchases = ConcurrentHashMap.newKeySet();
+
     public HorseService(Plugin plugin, ConfigManager config, HorseRepository horseRepository, StationService stationService,
-                         EconomyProvider economy, TaskScheduler scheduler, Messages messages) {
+                         WorldGuardHook worldGuardHook, EconomyProvider economy, TaskScheduler scheduler, Messages messages) {
         this.plugin = plugin;
         this.config = config;
         this.horseRepository = horseRepository;
         this.stationService = stationService;
+        this.worldGuardHook = worldGuardHook;
         this.economy = economy;
         this.scheduler = scheduler;
         this.messages = messages;
@@ -100,78 +110,100 @@ public final class HorseService {
     }
 
     public void purchase(Player player, HorseTier tier) {
-        if (ownedHorses.containsKey(player.getUniqueId())) {
+        UUID playerUuid = player.getUniqueId();
+        // pendingPurchases.add() is the actual guard against a double-buy: it's claimed here,
+        // synchronously, before any of the async work below, and only released once
+        // spawnPurchasedHorse() finishes - see the field's own comment for why that matters.
+        if (ownedHorses.containsKey(playerUuid) || !pendingPurchases.add(playerUuid)) {
             messages.send(player, "already-own-horse");
             return;
         }
 
         TierDefinition definition = config.getTier(tier);
         if (definition == null) {
+            pendingPurchases.remove(playerUuid);
             return;
         }
 
         Optional<Station> station = stationService.findNearestBuyStation(player.getLocation());
         if (station.isEmpty()) {
+            pendingPurchases.remove(playerUuid);
             messages.send(player, "no-buy-station");
             return;
         }
 
         if (!economy.has(player, definition.getPrice())) {
+            pendingPurchases.remove(playerUuid);
             messages.send(player, "not-enough-money");
             return;
         }
 
+        // center() is null if the station's world can't be resolved right now - checked before
+        // withdrawing so a station with a bad/unloaded world can't charge the player for nothing.
         Location spawnLocation = station.get().center();
+        if (spawnLocation == null) {
+            pendingPurchases.remove(playerUuid);
+            messages.send(player, "no-buy-station");
+            return;
+        }
+
         economy.withdraw(player, definition.getPrice());
         scheduler.execute(spawnLocation, () -> spawnPurchasedHorse(player, tier, definition, spawnLocation));
     }
 
     private void spawnPurchasedHorse(Player player, HorseTier tier, TierDefinition definition, Location spawnLocation) {
-        Horse horse = (Horse) spawnLocation.getWorld().spawnEntity(spawnLocation, EntityType.HORSE);
-        horse.setColor(definition.getColor());
-        horse.setStyle(definition.getStyle());
-        horse.setTamed(true);
-        horse.setOwner(player);
-        horse.setAdult();
-        horse.getInventory().setSaddle(new ItemStack(Material.SADDLE));
+        try {
+            Horse horse = (Horse) spawnLocation.getWorld().spawnEntity(spawnLocation, EntityType.HORSE);
+            horse.setColor(definition.getColor());
+            horse.setStyle(definition.getStyle());
+            horse.setTamed(true);
+            horse.setOwner(player);
+            horse.setAdult();
+            horse.getInventory().setSaddle(new ItemStack(Material.SADDLE));
 
-        AttributeInstance health = horse.getAttribute(Attribute.MAX_HEALTH);
-        if (health != null) {
-            health.setBaseValue(definition.getHealth());
+            AttributeInstance health = horse.getAttribute(Attribute.MAX_HEALTH);
+            if (health != null) {
+                health.setBaseValue(definition.getHealth());
+            }
+            AttributeInstance speed = horse.getAttribute(Attribute.MOVEMENT_SPEED);
+            if (speed != null) {
+                speed.setBaseValue(definition.getSpeed());
+            }
+            AttributeInstance jump = horse.getAttribute(Attribute.JUMP_STRENGTH);
+            if (jump != null) {
+                jump.setBaseValue(definition.getJumpStrength());
+            }
+            horse.setHealth(definition.getHealth());
+
+            horse.getPersistentDataContainer().set(ownerKey, PersistentDataType.STRING, player.getUniqueId().toString());
+            horse.getPersistentDataContainer().set(tierKey, PersistentDataType.STRING, tier.name());
+
+            OwnedHorse owned = new OwnedHorse(
+                    horse.getUniqueId(),
+                    player.getUniqueId(),
+                    tier,
+                    definition.getPrice(),
+                    spawnLocation.getWorld().getName(),
+                    spawnLocation.getX(),
+                    spawnLocation.getY(),
+                    spawnLocation.getZ(),
+                    System.currentTimeMillis()
+            );
+            ownedHorses.put(player.getUniqueId(), owned);
+            horseRepository.save(owned).exceptionally(throwable -> {
+                plugin.getLogger().log(Level.SEVERE, "Failed to persist purchased horse " + owned.getHorseUuid(), throwable);
+                return null;
+            });
+
+            messages.send(player, "purchase-success",
+                    Placeholder.parsed("tier", definition.getDisplayName()),
+                    Placeholder.unparsed("price", String.valueOf(definition.getPrice())));
+        } finally {
+            // Released here rather than right after ownedHorses.put() above so a mid-spawn
+            // exception still frees it up - otherwise this player could get permanently locked
+            // out of ever buying again after a single failed spawn.
+            pendingPurchases.remove(player.getUniqueId());
         }
-        AttributeInstance speed = horse.getAttribute(Attribute.MOVEMENT_SPEED);
-        if (speed != null) {
-            speed.setBaseValue(definition.getSpeed());
-        }
-        AttributeInstance jump = horse.getAttribute(Attribute.JUMP_STRENGTH);
-        if (jump != null) {
-            jump.setBaseValue(definition.getJumpStrength());
-        }
-        horse.setHealth(definition.getHealth());
-
-        horse.getPersistentDataContainer().set(ownerKey, PersistentDataType.STRING, player.getUniqueId().toString());
-        horse.getPersistentDataContainer().set(tierKey, PersistentDataType.STRING, tier.name());
-
-        OwnedHorse owned = new OwnedHorse(
-                horse.getUniqueId(),
-                player.getUniqueId(),
-                tier,
-                definition.getPrice(),
-                spawnLocation.getWorld().getName(),
-                spawnLocation.getX(),
-                spawnLocation.getY(),
-                spawnLocation.getZ(),
-                System.currentTimeMillis()
-        );
-        ownedHorses.put(player.getUniqueId(), owned);
-        horseRepository.save(owned).exceptionally(throwable -> {
-            plugin.getLogger().log(Level.SEVERE, "Failed to persist purchased horse " + owned.getHorseUuid(), throwable);
-            return null;
-        });
-
-        messages.send(player, "purchase-success",
-                Placeholder.parsed("tier", definition.getDisplayName()),
-                Placeholder.unparsed("price", String.valueOf(definition.getPrice())));
     }
 
     public void sell(Player player) {
@@ -233,11 +265,14 @@ public final class HorseService {
     }
 
     /**
-     * Hands full control to the rider by cancelling any in-progress "walk to owner" path - called
-     * once the mount is confirmed to be the owner (see {@link HorseListener}); an unauthorized
-     * mount is cancelled before this runs.
+     * Hands full control to the rider: cancels any in-progress "walk to owner" path, and - since
+     * a sitting horse is unaware (see {@link #toggleStay}) - makes sure it's aware again so the
+     * rider can actually steer it, regardless of whether it was told to stay before being mounted.
+     * Called once the mount is confirmed to be the owner (see {@link HorseListener}); an
+     * unauthorized mount is cancelled before this runs.
      */
     public void onMount(Horse horse) {
+        horse.setAware(true);
         Pathfinder pathfinder = horse.getPathfinder();
         if (pathfinder.hasPath()) {
             pathfinder.stopPathfinding();
@@ -245,10 +280,15 @@ public final class HorseService {
     }
 
     /**
-     * Kicks off an immediate follow check on dismount instead of waiting for the next periodic
+     * If told to stay, sits back down instead of resuming awareness (see {@link #toggleStay}).
+     * Otherwise, kicks off an immediate follow check instead of waiting for the next periodic
      * {@link #startFollowLoop()} cycle, so the horse doesn't stand around for up to a second first.
      */
     public void onDismount(Horse horse) {
+        if (isStaying(horse)) {
+            horse.setAware(false);
+            return;
+        }
         Player owner = onlineOwner(horse);
         if (owner != null) {
             scheduler.execute(horse, () -> followOwner(horse, owner));
@@ -276,22 +316,30 @@ public final class HorseService {
     }
 
     /**
-     * Toggles the owner's punch-to-command stay flag (see {@link HorseListener}). Staying doesn't
-     * touch {@link Horse#setAI}, so the horse still reacts normally to everything else - it just
-     * stops the follow loop from walking or teleporting it toward the owner.
+     * Toggles the owner's punch-to-command stay flag (see {@link HorseListener}) - dog/wolf-sit
+     * style: {@link Horse#setAware} off, not {@link Horse#setAI}, so it still reacts to being
+     * pushed/hit/knocked around like a normal mob, it just stops moving or acting on its own
+     * instead of being a fully inert statue.
      */
     public void toggleStay(Horse horse, Player owner) {
         boolean nowStaying = !isStaying(horse);
         horse.getPersistentDataContainer().set(stayKey, PersistentDataType.BOOLEAN, nowStaying);
 
         if (nowStaying) {
+            horse.setAware(false);
+            // Belt-and-suspenders: setAware(false) stops new self-initiated movement, but doesn't
+            // reliably guarantee an already-in-progress path gets abandoned mid-stride.
             Pathfinder pathfinder = horse.getPathfinder();
             if (pathfinder.hasPath()) {
                 pathfinder.stopPathfinding();
             }
             messages.send(owner, "horse-stay-enabled");
         } else {
+            horse.setAware(true);
             messages.send(owner, "horse-stay-disabled");
+            // Same reasoning as onDismount(): check right away instead of leaving it standing
+            // around for up to a second until the next loop cycle picks it back up.
+            scheduler.execute(horse, () -> followOwner(horse, owner));
         }
     }
 
@@ -300,8 +348,11 @@ public final class HorseService {
     }
 
     private void followOwner(Horse horse, Player owner) {
-        if (!horse.getPassengers().isEmpty() || !horse.getWorld().equals(owner.getWorld()) || isStaying(horse)) {
-            // Ridden, the owner's elsewhere entirely, or told to stay put - leave it alone either way.
+        if (!horse.isValid() || !owner.isOnline() || !horse.getPassengers().isEmpty()
+                || !horse.getWorld().equals(owner.getWorld()) || isStaying(horse)) {
+            // Dead/removed, offline, ridden, the owner's elsewhere entirely, or told to stay put -
+            // leave it alone either way. isValid()/isOnline() matter because this can run slightly
+            // after being dispatched (see startFollowLoop()), by which point either could be gone.
             return;
         }
 
@@ -325,11 +376,26 @@ public final class HorseService {
     }
 
     private void teleportToOwner(Horse horse, Player owner) {
-        Location safeSpot = findSafeLocationNear(owner.getLocation());
-        if (safeSpot != null) {
-            horse.teleportAsync(safeSpot);
+        if (!horse.isValid() || !owner.isOnline() || isStaying(horse)) {
+            // The first two could have gone away between followOwner() dispatching onto the
+            // owner's thread and this actually running - and so could "not staying": if the owner
+            // closes the distance and toggles stay on in that same gap, this must not still yank
+            // the horse to them anyway.
+            return;
         }
-        // No safe spot found this attempt - the loop just tries again next cycle.
+
+        Location safeSpot = findSafeLocationNear(owner.getLocation());
+        if (safeSpot == null) {
+            // No safe spot found this attempt - the loop just tries again next cycle.
+            return;
+        }
+
+        horse.teleportAsync(safeSpot).thenAccept(success -> {
+            if (!success) {
+                plugin.getLogger().log(Level.FINE,
+                        "Follow-teleport for horse {0} to its owner was denied", horse.getUniqueId());
+            }
+        });
     }
 
     private Location findSafeLocationNear(Location center) {
@@ -339,11 +405,16 @@ public final class HorseService {
             int x = center.getBlockX() + random.nextInt(-TELEPORT_SEARCH_RADIUS, TELEPORT_SEARCH_RADIUS + 1);
             int z = center.getBlockZ() + random.nextInt(-TELEPORT_SEARCH_RADIUS, TELEPORT_SEARCH_RADIUS + 1);
             int y = world.getHighestBlockYAt(x, z) + 1;
+            Location candidate = new Location(world, x + 0.5, y, z + 0.5, center.getYaw(), 0);
 
+            // Solid, unobstructed ground isn't enough on its own - without the region check, a
+            // horse could get teleported straight into someone else's claim just because the
+            // owner it's chasing walked near the edge of it.
             if (world.getBlockAt(x, y - 1, z).getType().isSolid()
                     && !world.getBlockAt(x, y, z).getType().isSolid()
-                    && !world.getBlockAt(x, y + 1, z).getType().isSolid()) {
-                return new Location(world, x + 0.5, y, z + 0.5, center.getYaw(), 0);
+                    && !world.getBlockAt(x, y + 1, z).getType().isSolid()
+                    && !worldGuardHook.hasAnyRegion(candidate)) {
+                return candidate;
             }
         }
         return null;

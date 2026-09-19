@@ -66,7 +66,7 @@ public final class Equinox extends JavaPlugin {
 
         EconomyProvider economyProvider = new StubEconomyProvider(getLogger());
         HorseService horseServiceInstance = new HorseService(this, configManager, horseRepository, stationServiceInstance,
-                economyProvider, schedulerInstance, messagesInstance);
+                worldGuardHook, economyProvider, schedulerInstance, messagesInstance);
 
         instance = this;
         scheduler = schedulerInstance;

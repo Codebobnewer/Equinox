@@ -51,4 +51,29 @@ public final class WorldGuardHook {
                 .map(region -> region.contains(BukkitAdapter.asBlockVector(location)))
                 .orElse(false);
     }
+
+    /**
+     * Whether any WorldGuard region at all covers this point, ignoring the implicit
+     * {@code __global__} region every world has by default. Used to keep the follow-teleport
+     * (see HorseService) from dropping a horse into someone else's claim just because it
+     * happened to be solid, unobstructed ground.
+     */
+    public boolean hasAnyRegion(Location location) {
+        World world = location.getWorld();
+        if (world == null) {
+            return false;
+        }
+        RegionManager manager = WorldGuard.getInstance().getPlatform()
+                .getRegionContainer()
+                .get(BukkitAdapter.adapt(world));
+        if (manager == null) {
+            return false;
+        }
+        for (ProtectedRegion region : manager.getApplicableRegions(BukkitAdapter.asBlockVector(location))) {
+            if (!region.getId().equals(ProtectedRegion.GLOBAL_REGION)) {
+                return true;
+            }
+        }
+        return false;
+    }
 }

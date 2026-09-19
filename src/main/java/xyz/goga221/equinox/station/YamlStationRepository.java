@@ -23,13 +23,6 @@ public final class YamlStationRepository implements StationRepository {
     private final TaskScheduler scheduler;
     private final Object lock = new Object();
 
-    /**
-     * Lazily loaded once, then reused for every subsequent read/write - this repository is the
-     * sole writer of stations.yml, so re-parsing it from disk before every single save would be
-     * wasted I/O; only the final {@code config.save(...)} actually needs to touch disk.
-     */
-    private YamlConfiguration config;
-
     public YamlStationRepository(File dataFolder, TaskScheduler scheduler) {
         if (!dataFolder.exists() && !dataFolder.mkdirs()) {
             throw new IllegalStateException("Could not create plugin data folder: " + dataFolder);
@@ -95,12 +88,15 @@ public final class YamlStationRepository implements StationRepository {
         });
     }
 
-    /** Called only from within {@link #lock}, so lazy init needs no extra synchronization. */
+    /**
+     * Re-reads stations.yml from disk on every call instead of caching the parsed config, since
+     * this file is meant to be hand-editable by admins while the server is running (see class
+     * doc) - caching it across calls meant an admin's manual edit could get silently overwritten
+     * by the next automated save. Each caller already holds {@link #lock} for the duration of its
+     * own read-modify-save, so this doesn't introduce any inconsistency within a single operation.
+     */
     private YamlConfiguration configuration() {
-        if (config == null) {
-            config = YamlConfiguration.loadConfiguration(stationsFile);
-        }
-        return config;
+        return YamlConfiguration.loadConfiguration(stationsFile);
     }
 
     private <T> CompletableFuture<T> runAsync(IOAction<T> action) {

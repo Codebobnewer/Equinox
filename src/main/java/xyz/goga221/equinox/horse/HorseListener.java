@@ -2,19 +2,19 @@ package xyz.goga221.equinox.horse;
 
 import xyz.goga221.equinox.util.Messages;
 import lombok.RequiredArgsConstructor;
-import org.bukkit.entity.Entity;
 import org.bukkit.entity.Horse;
 import org.bukkit.entity.Player;
-import org.bukkit.entity.Projectile;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
+import org.bukkit.event.entity.EntityBreedEvent;
 import org.bukkit.event.entity.EntityDamageByEntityEvent;
 import org.bukkit.event.entity.EntityDeathEvent;
+import org.bukkit.event.entity.PlayerLeashEntityEvent;
 import org.bukkit.event.vehicle.VehicleEnterEvent;
 import org.bukkit.event.vehicle.VehicleExitEvent;
 
-/** Translates raw Bukkit events into {@link HorseService} calls: ride-lock, hit-blocking, cleanup on death. */
+/** Translates raw Bukkit events into {@link HorseService} calls: ride-lock, leash/breed-blocking, owner-punch-to-stay, cleanup on death. */
 @RequiredArgsConstructor
 public final class HorseListener implements Listener {
 
@@ -49,34 +49,49 @@ public final class HorseListener implements Listener {
         }
     }
 
-    // Nobody can actually damage a tagged horse, so the owner's own punch is free to repurpose:
-    // a direct melee hit (not a projectile) from the owner toggles stay instead of doing nothing.
-    @EventHandler(priority = EventPriority.LOWEST, ignoreCancelled = true)
-    public void onPlayerHitHorse(EntityDamageByEntityEvent event) {
+    // Mounting and attacking are guarded above, but leashing wasn't - anyone could walk off with
+    // someone else's horse on a lead without ever needing to ride or damage it.
+    @EventHandler(ignoreCancelled = true)
+    public void onLeash(PlayerLeashEntityEvent event) {
         if (!(event.getEntity() instanceof Horse horse) || !horseService.isTaggedHorse(horse)) {
             return;
         }
-        Player attacker = attackingPlayer(event.getDamager());
-        if (attacker == null) {
-            return;
-        }
-        event.setCancelled(true);
-
-        if (event.getDamager() instanceof Player owner && horseService.isOwner(horse, owner)) {
-            horseService.toggleStay(horse, owner);
-        } else {
-            messages.send(attacker, "cant-hit-horse");
+        if (!horseService.isOwner(horse, event.getPlayer())) {
+            event.setCancelled(true);
+            messages.send(event.getPlayer(), "not-owner");
         }
     }
 
-    private Player attackingPlayer(Entity damager) {
-        if (damager instanceof Player player) {
-            return player;
+    // Everyone else's hits go through normally now - only the owner's own punch is special-cased,
+    // repurposed as the stay toggle instead of dealing damage (they'd have no other free gesture
+    // to command the horse with otherwise).
+    @EventHandler(priority = EventPriority.LOWEST, ignoreCancelled = true)
+    public void onPlayerHitHorse(EntityDamageByEntityEvent event) {
+        if (!(event.getDamager() instanceof Player owner)
+                || !(event.getEntity() instanceof Horse horse)
+                || !horseService.isTaggedHorse(horse)
+                || !horseService.isOwner(horse, owner)) {
+            return;
         }
-        if (damager instanceof Projectile projectile && projectile.getShooter() instanceof Player shooter) {
-            return shooter;
+        event.setCancelled(true);
+        horseService.toggleStay(horse, owner);
+    }
+
+    // Nothing stopped an owned horse from being fed love-mode food and bred with any other horse
+    // (someone else's tagged one, or a random wild one) - the resulting foal wouldn't be tagged,
+    // owned, or tracked in the database at all, just a stray horse loose in the world. Cancelling
+    // the birth itself covers every way love mode could have been triggered, not just feeding.
+    @EventHandler(ignoreCancelled = true)
+    public void onBreed(EntityBreedEvent event) {
+        boolean involvesOwnedHorse = (event.getMother() instanceof Horse mother && horseService.isTaggedHorse(mother))
+                || (event.getFather() instanceof Horse father && horseService.isTaggedHorse(father));
+        if (!involvesOwnedHorse) {
+            return;
         }
-        return null;
+        event.setCancelled(true);
+        if (event.getBreeder() instanceof Player breeder) {
+            messages.send(breeder, "cant-breed-horse");
+        }
     }
 
     @EventHandler

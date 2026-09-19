@@ -86,16 +86,17 @@ public final class StableCommand {
 
     private void registerStation(Player player, String name, String region, StationType type) {
         stationService.createStation(name, type, player.getWorld(), region)
-                .thenAccept(created -> {
-                    if (created) {
-                        messages.send(player, "station-set-success",
+                .thenAccept(result -> {
+                    switch (result) {
+                        case CREATED -> messages.send(player, "station-set-success",
                                 Placeholder.unparsed("type", type == StationType.BUY ? "Buy" : "Sell"),
                                 Placeholder.unparsed("name", name),
                                 Placeholder.unparsed("region", region));
-                    } else {
-                        messages.send(player, "station-set-failed",
+                        case REGION_NOT_FOUND -> messages.send(player, "station-set-failed",
                                 Placeholder.unparsed("region", region),
                                 Placeholder.unparsed("world", player.getWorld().getName()));
+                        case NAME_TAKEN_BY_OTHER_TYPE -> messages.send(player, "station-name-taken",
+                                Placeholder.unparsed("name", name));
                     }
                 })
                 .exceptionally(throwable -> {

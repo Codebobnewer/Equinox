@@ -8,9 +8,15 @@ ride them exclusively, and sell them back for a partial refund at WorldGuard-def
 - `/stable` opens a GUI with three horse tiers (Basic/Advanced/Elite), each with its own price,
   health, speed and jump strength - all configurable in `config.yml`.
 - Buying spawns a saddled horse at the nearest admin-defined **buy station** (a WorldGuard region).
-- Only the buyer can ride their horse; other players can't mount it, and can't damage it either.
-- An unridden horse stands still (no wandering AI) until it's attacked, at which point it can
-  panic/flee for a configurable duration before settling back down.
+- Only the buyer can ride or leash their horse - other players can't mount it or lead it away,
+  though anyone (or anything) can still damage it.
+- An unridden horse follows its owner wolf-style: it walks over once they stray far enough away,
+  and teleports to a safe nearby spot if they get too far to realistically catch up on foot.
+- Punching your own horse - the one interaction it's otherwise immune to from its owner - toggles
+  **stay**: it stops following and sits in place, still reactive to being pushed, hit, or knocked
+  around, just not moving or acting on its own, until punched again.
+- Purchased horses can't breed, so a tier horse's stats and looks never end up on an untracked
+  wild foal.
 - `/stable sell` refunds a configurable percentage of the purchase price, but only while the
   horse is standing inside a **sell station** region.
 - One horse owned per player at a time.
@@ -130,11 +136,14 @@ See `src/main/resources/config.yml` for the full set of options:
 - `database.file` - SQLite filename (owned-horse records only), stored in the plugin's data folder.
   Stations are hand-editable admin data and live in `stations.yml` instead, not this file.
 - `economy.refund-percent` - fraction of the purchase price refunded on sell.
-- `horse.panic-duration-ticks` - how long a hit horse's AI stays on before it goes back to
-  standing still, if it isn't hit again in the meantime.
 - `tiers.*` - display name, price, health, speed, jump strength, and horse color/style per tier.
 - `messages.*` - every player-facing message, as [MiniMessage](https://docs.advntr.dev/minimessage/)
   strings.
+
+> [!NOTE]
+> The follow/stay/teleport distances and timing (how far before a horse starts walking to its
+> owner, how close before it stops, when it teleports instead of walking) aren't config options -
+> they're constants in `HorseService`, tuned to match vanilla's own wolf AI thresholds.
 
 ## Architecture notes
 
@@ -149,6 +158,9 @@ See `src/main/resources/config.yml` for the full set of options:
 - **Economy is stubbed.** `EconomyProvider` is an interface; `StubEconomyProvider` always
   succeeds and just logs withdrawals/deposits. Swap in a Vault-backed implementation later without
   touching anything else.
+- **`config.yml` self-heals new keys.** `ConfigManager` loads the bundled `config.yml` as defaults
+  and copies in anything missing from the deployed file (then saves it), so upgrading Equinox picks
+  up newly-added keys automatically instead of silently falling back to raw key names in chat.
 - **Ownership is cached in memory.** `HorseService` keeps a `Map<UUID, OwnedHorse>` loaded fully
   asynchronously at startup (`loadOwnedHorsesIntoCache()`, logged once it actually finishes), so
   purchase/sell/menu-open never block the calling thread on I/O, and a slow disk can't stall
